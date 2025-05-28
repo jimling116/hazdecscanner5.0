@@ -1,4 +1,13 @@
+// Netlify Function – Google Vision OCR with Base64 credentials
 const { ImageAnnotatorClient } = require('@google-cloud/vision');
+const fs = require('fs');
+
+// Decode base64 credentials if needed
+if (process.env.GCLOUD_CREDENTIALS_BASE64 && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  const credsPath = '/tmp/gcloud-creds.json';
+  fs.writeFileSync(credsPath, Buffer.from(process.env.GCLOUD_CREDENTIALS_BASE64, 'base64').toString('utf-8'));
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = credsPath;
+}
 
 exports.handler = async (event, context) => {
   // CORS headers
@@ -32,19 +41,8 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // Handle credentials - try both methods
-    let client;
-    
-    if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
-      // Method 1: JSON string
-      const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
-      client = new ImageAnnotatorClient({ credentials });
-    } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-      // Method 2: File path (standard way)
-      client = new ImageAnnotatorClient();
-    } else {
-      throw new Error('No Google Cloud credentials found');
-    }
+    // Initialize Vision client (credentials are set via environment above)
+    const client = new ImageAnnotatorClient();
 
     // Convert base64 to buffer and call Vision API
     const imageBuffer = Buffer.from(image, 'base64');
