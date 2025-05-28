@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <title>HAZDEC Scanner Pro - Google Vision</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            background: #000;
+            color: #fff;
+            overflow-x: hidden;
+            position: relative;
+            min-height: 100vh;
+        }
+        
+        .app-container {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+        }
+        
+        .header {
+            background: rgba(26, 26, 26, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+            z-index: 10;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #fff 0%, #999 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .subtitle {
+            font-size: 14px;
+            color: #666;
+            margin-top: 4px;
+            font-weight: 500;
+        }
+        
+        .setup-notice {
+            background: rgba(0, 122, 255, 0.1);
+            border: 1px solid rgba(0, 122, 255, 0.3);
+            color: #007AFF;
+            padding: 16px;
+            margin: 20px;
+            border-radius: 12px;
+            text-align: center;
+            display: none;
+        }
+        
+        .setup-notice.error {
+            background: rgba(255, 59, 48, 0.1);
+            border-color: rgba(255, 59, 48, 0.3);
+            color: #FF3B30;
+        }
+        
+        .main-content {
+            flex: 1;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .config-section {
+            background: rgba(26, 26, 26, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .config-section h3 {
+            font-size: 16px;
+            margin-bottom: 12px;
+            color: #999;
+        }
+        
+        .config-input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: 'SF Mono', monospace;
+        }
+        
+        .config-input:focus {
+            outline: none;
+            border-color: #007AFF;
+            background: rgba(255, 255, 255, 0.08);
+        }
+        
+        .camera-section {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+            background: #000;
+            border-radius: 24px;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+            aspect-ratio: 4/3;
+        }
+        
+        #video, #capturedImage {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        
+        #canvas {
+            display: none;
+        }
+        
+        .camera-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+        }
+        
+        .scan-region {
+            position: absolute;
+            top: 10%;
+            left: 5%;
+            right: 5%;
+            bottom: 10%;
+            border: 2px solid rgba(0, 255, 0, 0.5);
+            border-radius: 16px;
+            background: linear-gradient(
+                to bottom,
+                rgba(0, 255, 0, 0.1) 0%,
+                transparent 20%,
+                transparent 80%,
+                rgba(0, 255, 0, 0.1) 100%
+            );
+        }
+        
+        .scan-corners {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .corner {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border: 3px solid #00ff00;
+        }
+        
+        .corner.tl {
+            top: -2px;
+            left: -2px;
+            border-right: none;
+            border-bottom: none;
+            border-top-left-radius: 12px;
+        }
+        
+        .corner.tr {
+            top: -2px;
+            right: -2px;
+            border-left: none;
+            border-bottom: none;
+            border-top-right-radius: 12px;
+        }
+        
+        .corner.bl {
+            bottom: -2px;
+            left: -2px;
+            border-right: none;
+            border-top: none;
+            border-bottom-left-radius: 12px;
+        }
+        
+        .corner.br {
+            bottom: -2px;
+            right: -2px;
+            border-left: none;
+            border-top: none;
+            border-bottom-right-radius: 12px;
+        }
+        
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            padding: 0 20px;
+        }
+        
+        .btn {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 16px 32px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 100px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 100%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .btn:hover::before {
+            opacity: 1;
+        }
+        
+        .btn:active {
+            transform: scale(0.98);
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn.primary {
+            background: #007AFF;
+            border-color: #007AFF;
+        }
+        
+        .btn.success {
+            background: #34C759;
+            border-color: #34C759;
+        }
+        
+        .processing-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            display: none;
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        
+        .processing-content {
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .processing-spinner {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 30px;
+            position: relative;
+        }
+        
+        .spinner-ring {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+        }
+        
+        .spinner-ring.active {
+            border-top-color: #007AFF;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .processing-status {
+            font-size: 18px;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+        
+        .processing-detail {
+            font-size: 14px;
+            color: #999;
+        }
+        
+        .results-section {
+            background: rgba(26, 26, 26, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 24px;
+            margin: 20px auto;
+            max-width: 800px;
+            width: 100%;
+            display: none;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        
+        .results-header h2 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+        
+        .status-badge {
+            padding: 8px 20px;
+            border-radius: 100px;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-badge.pass {
+            background: rgba(52, 199, 89, 0.2);
+            color: #34C759;
+            border: 1px solid rgba(52, 199, 89, 0.3);
+        }
+        
+        .status-badge.fail {
+            background: rgba(255, 59, 48, 0.2);
+            color: #FF3B30;
+            border: 1px solid rgba(255, 59, 48, 0.3);
+        }
+        
+        .table-container {
+            overflow-x: auto;
+            margin: 0 -24px;
+            padding: 0 24px;
+        }
+        
+        .hazards-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        
+        .hazards-table th {
+            background: rgba(255, 255, 255, 0.05);
+            color: #999;
+            padding: 16px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .hazards-table td {
+            padding: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .hazards-table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .hazards-table tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+        
+        .success-row {
+            background: rgba(52, 199, 89, 0.05);
+        }
+        
+        .error-row {
+            background: rgba(255, 59, 48, 0.05);
+        }
+        
+        .cell-content {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        
+        .cell-content .value {
+            font-weight: 600;
+            font-size: 15px;
+        }
+        
+        .cell-content .confidence {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .cell-content .error-text {
+            font-size: 12px;
+            color: #FF3B30;
+            font-weight: 500;
+        }
+        
+        .status-icon {
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .ocr-preview {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 20px;
+            font-family: 'SF Mono', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+        }
+        
+        .ocr-preview.active {
+            display: block;
+        }
+        
+        .ocr-preview pre {
+            margin: 0;
+            white-space: pre-wrap;
+            color: #00ff00;
+        }
+        
+        @media (max-width: 600px) {
+            .main-content {
+                padding: 16px;
+            }
+            
+            .btn {
+                padding: 14px 24px;
+                font-size: 15px;
+            }
+            
+            .hazards-table {
+                font-size: 14px;
+            }
+            
+            .hazards-table th,
+            .hazards-table td {
+                padding: 12px;
+            }
+            
+            .results-section {
+                padding: 20px;
+            }
+            
+            .table-container {
+                margin: 0 -20px;
+                padding: 0 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="header">
+            <h1>HAZDEC Scanner Pro</h1>
+            <div class="subtitle">Google Cloud Vision Edition</div>
+        </div>
+        
+        <div id="setupNotice" class="setup-notice">
+            <strong>Setup Required:</strong> Enter your API endpoint URL below
+        </div>
+        
+        <div class="main-content">
+            <div class="config-section">
+                <h3>API Configuration</h3>
+                <input 
+                    type="text" 
+                    id="apiEndpoint" 
+                    class="config-input" 
+                    placeholder="https://your-api-endpoint.netlify.app/.netlify/functions/ocr"
+                    value=""
+                >
+                <p style="font-size: 12px; color: #666; margin-top: 8px;">
+                    Enter your backend API endpoint (see setup instructions)
+                </p>
+            </div>
+            
+            <div class="camera-section">
+                <video id="video" autoplay playsinline></video>
+                <img id="capturedImage" style="display: none;">
+                <canvas id="canvas"></canvas>
+                
+                <div class="camera-overlay" id="cameraOverlay">
+                    <div class="scan-region">
+                        <div class="scan-corners">
+                            <div class="corner tl"></div>
+                            <div class="corner tr"></div>
+                            <div class="corner bl"></div>
+                            <div class="corner br"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button class="btn primary" id="captureBtn" onclick="capture()">
+                    <span>📸</span> Capture
+                </button>
+                <button class="btn" id="retakeBtn" onclick="retake()" style="display: none;">
+                    <span>🔄</span> Retake
+                </button>
+                <button class="btn success" id="analyzeBtn" onclick="analyze()" style="display: none;">
+                    <span>🔍</span> Analyze
+                </button>
+            </div>
+            
+            <div id="ocrPreview" class="ocr-preview">
+                <strong>OCR Raw Text:</strong>
+                <pre id="ocrText"></pre>
+            </div>
+            
+            <div class="results-section" id="results"></div>
+        </div>
+    </div>
+    
+    <div class="processing-overlay" id="processingOverlay">
+        <div class="processing-content">
+            <div class="processing-spinner">
+                <div class="spinner-ring"></div>
+                <div class="spinner-ring active"></div>
+            </div>
+            <div class="processing-status" id="processingStatus">Initializing Scanner...</div>
+            <div class="processing-detail" id="processingDetail">Preparing image</div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const CONFIG = {
+            API_ENDPOINT_KEY: 'hazdec_api_endpoint',
+            IMAGE: {
+                MAX_WIDTH: 1600,
+                MAX_HEIGHT: 1200,
+                QUALITY: 0.9
+            }
+        };
+        
+        // Enhanced database with validation rules
+        const dgDatabase = {
+            'UN1066': { psn: 'NITROGEN, COMPRESSED', class: '2.2', pg: null },
+            'UN1072': { psn: 'OXYGEN, COMPRESSED', class: '2.2', pg: null },
+            'UN1002': { psn: 'AIR, COMPRESSED', class: '2.2', pg: null },
+            'UN1046': { psn: 'HELIUM, COMPRESSED', class: '2.2', pg: null },
+            'UN3090': { psn: 'LITHIUM METAL BATTERIES', class: '9', pg: null },
+            'UN3091': { psn: 'LITHIUM METAL BATTERIES CONTAINED IN EQUIPMENT', class: '9', pg: null },
+            'UN3091': { psn: 'LITHIUM METAL BATTERIES PACKED WITH EQUIPMENT', class: '9', pg: null },
+            'UN3480': { psn: 'LITHIUM ION BATTERIES', class: '9', pg: null },
+            'UN3481': { psn: 'LITHIUM ION BATTERIES CONTAINED IN EQUIPMENT', class: '9', pg: null },
+            'UN3481': { psn: 'LITHIUM ION BATTERIES PACKED WITH EQUIPMENT', class: '9', pg: null },
+            'UN3166': { psn: 'VEHICLE, FLAMMABLE GAS POWERED', class: '9', pg: null },
+            'UN3166': { psn: 'VEHICLE, FLAMMABLE LIQUID POWERED', class: '9', pg: null },
+            'UN3166': { psn: 'ENGINE, INTERNAL COMBUSTION', class: '9', pg: null },
+            'UN3528': { psn: 'ENGINE, INTERNAL COMBUSTION, FLAMMABLE LIQUID POWERED', class: '3', pg: null },
+            'UN3529': { psn: 'ENGINE, INTERNAL COMBUSTION, FLAMMABLE GAS POWERED', class: '2.1', pg: null },
+            'UN3530': { psn: 'ENGINE, INTERNAL COMBUSTION', class: '9', pg: null },
+            'UN1203': { psn: 'GASOLINE', class: '3', pg: 'II' },
+            'UN1203': { psn: 'MOTOR SPIRIT', class: '3', pg: 'II' },
+            'UN1203': { psn: 'PETROL', class: '3', pg: 'II' },
+            'UN1863': { psn: 'FUEL, AVIATION, TURBINE ENGINE', class: '3', pg: 'III' },
+            'UN1202': { psn: 'DIESEL FUEL', class: '3', pg: 'III' },
+            'UN1202': { psn: 'GAS OIL', class: '3', pg: 'III' },
+            'UN1223': { psn: 'KEROSENE', class: '3', pg: 'III' },
+            'UN1950': { psn: 'AEROSOLS', class: '2.1', pg: null },
+            'UN1950': { psn: 'AEROSOLS, FLAMMABLE', class: '2.1', pg: null },
+            'UN1978': { psn: 'PROPANE', class: '2.1', pg: null },
+            'UN3363': { psn: 'DANGEROUS GOODS IN MACHINERY', class: '9', pg: null },
+            'UN3363': { psn: 'DANGEROUS GOODS IN APPARATUS', class: '9', pg: null },
+            'UN3537': { psn: 'ARTICLES CONTAINING FLAMMABLE GAS, N.O.S.', class: '2.1', pg: null },
+            'UN3538': { psn: 'ARTICLES CONTAINING NON-FLAMMABLE, NON-TOXIC GAS, N.O.S.', class: '2.2', pg: null }
+        };
+        
+        // Global variables
+        let stream = null;
+        
+        // Load saved API endpoint
+        window.addEventListener('DOMContentLoaded', function() {
+            // Try to load saved endpoint
+            try {
+                const savedEndpoint = localStorage.getItem(CONFIG.API_ENDPOINT_KEY);
+                if (savedEndpoint) {
+                    document.getElementById('apiEndpoint').value = savedEndpoint;
+                } else {
+                    document.getElementById('setupNotice').style.display = 'block';
+                }
+            } catch (e) {
+                console.log('localStorage not available, continuing without saved endpoint');
+                document.getElementById('setupNotice').style.display = 'block';
+            }
+            
+            // Save endpoint on change
+            document.getElementById('apiEndpoint').addEventListener('change', function() {
+                try {
+                    localStorage.setItem(CONFIG.API_ENDPOINT_KEY, this.value);
+                } catch (e) {
+                    console.log('Cannot save to localStorage, continuing anyway');
+                }
+                document.getElementById('setupNotice').style.display = 'none';
+            });
+            
+            // Start camera
+            startCamera();
+            
+            // Enable debug mode with hash
+            if (window.location.hash === '#debug') {
+                document.getElementById('ocrPreview').classList.add('active');
+            }
+        });
+        
+        async function startCamera() {
+            try {
+                // Check if getUserMedia is available
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('Camera API not supported in this browser');
+                }
+                
+                const constraints = {
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: CONFIG.IMAGE.MAX_WIDTH },
+                        height: { ideal: CONFIG.IMAGE.MAX_HEIGHT }
+                    }
+                };
+                
+                console.log('Requesting camera access...');
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                const video = document.getElementById('video');
+                video.srcObject = stream;
+                
+                // Ensure video plays
+                video.onloadedmetadata = () => {
+                    video.play().catch(err => {
+                        console.error('Video play failed:', err);
+                    });
+                };
+                
+                console.log('Camera initialized successfully');
+            } catch (err) {
+                console.error('Camera initialization failed:', err);
+                
+                // More specific error messages
+                if (err.name === 'NotAllowedError') {
+                    showError('Camera access denied. Please allow camera permissions and refresh.');
+                } else if (err.name === 'NotFoundError') {
+                    showError('No camera found. Please ensure your device has a camera.');
+                } else if (err.name === 'NotReadableError') {
+                    showError('Camera is already in use by another application.');
+                } else {
+                    showError(`Camera error: ${err.message}`);
+                }
+            }
+        }
+        
+        function capture() {
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const capturedImage = document.getElementById('capturedImage');
+            
+            // Set canvas size to match video
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // Draw video frame to canvas
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+            
+            // Convert to data URL
+            capturedImage.src = canvas.toDataURL('image/jpeg', CONFIG.IMAGE.QUALITY);
+            video.style.display = 'none';
+            capturedImage.style.display = 'block';
+            
+            // Update UI
+            document.getElementById('captureBtn').style.display = 'none';
+            document.getElementById('retakeBtn').style.display = 'inline-flex';
+            document.getElementById('analyzeBtn').style.display = 'inline-flex';
+            document.getElementById('cameraOverlay').style.display = 'none';
+            
+            // Stop camera
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        }
+        
+        function retake() {
+            document.getElementById('video').style.display = 'block';
+            document.getElementById('capturedImage').style.display = 'none';
+            document.getElementById('captureBtn').style.display = 'inline-flex';
+            document.getElementById('retakeBtn').style.display = 'none';
+            document.getElementById('analyzeBtn').style.display = 'none';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('cameraOverlay').style.display = 'block';
+            
+            startCamera();
+        }
+        
+        async function analyze() {
+            const apiEndpoint = document.getElementById('apiEndpoint').value;
+            
+            if (!apiEndpoint) {
+                showError('Please enter your API endpoint URL in the configuration section.');
+                return;
+            }
+            
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const overlay = document.getElementById('processingOverlay');
+            
+            analyzeBtn.disabled = true;
+            overlay.style.display = 'flex';
+            
+            try {
+                updateProcessingStatus('Preparing Image...', 'Converting to base64', 10);
+                
+                // Get image data
+                const canvas = document.getElementById('canvas');
+                const imageData = canvas.toDataURL('image/jpeg', CONFIG.IMAGE.QUALITY).split(',')[1];
+                
+                updateProcessingStatus('Sending to Google Vision...', 'Analyzing document', 30);
+                
+                // Call backend API
+                const response = await fetch(apiEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ image: imageData })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                updateProcessingStatus('Processing Results...', 'Extracting hazard data', 70);
+                
+                // Process Google Vision results
+                const hazards = processGoogleVisionResults(result);
+                
+                updateProcessingStatus('Validating Data...', 'Checking for errors', 90);
+                
+                // Display results
+                displayResults(hazards);
+                
+                overlay.style.display = 'none';
+                analyzeBtn.disabled = false;
+                
+            } catch (error) {
+                console.error('Analysis error:', error);
+                showError(`Analysis failed: ${error.message}`);
+                overlay.style.display = 'none';
+                analyzeBtn.disabled = false;
+            }
+        }
+        
+        function updateProcessingStatus(status, detail, progress) {
+            document.getElementById('processingStatus').textContent = status;
+            document.getElementById('processingDetail').textContent = detail;
+        }
+        
+        function showError(message) {
+            const notice = document.getElementById('setupNotice');
+            notice.textContent = message;
+            notice.classList.add('error');
+            notice.style.display = 'block';
+            setTimeout(() => {
+                notice.style.display = 'none';
+                notice.classList.remove('error');
+            }, 5000);
+        }
+        
+        function processGoogleVisionResults(visionResult) {
+            const hazards = [];
+            
+            // Get full text for debug
+            const fullText = visionResult.fullTextAnnotation?.text || visionResult.text || '';
+            
+            // Show in debug preview
+            if (document.getElementById('ocrPreview').classList.contains('active')) {
+                document.getElementById('ocrText').textContent = fullText;
+            }
+            
+            // Process text blocks to find table structure
+            const textAnnotations = visionResult.textAnnotations || [];
+            const fullTextAnnotation = visionResult.fullTextAnnotation;
+            
+            if (fullTextAnnotation && fullTextAnnotation.pages) {
+                // Process using full text annotation (better for tables)
+                hazards.push(...processFullTextAnnotation(fullTextAnnotation));
+            } else {
+                // Fallback to simple text processing
+                hazards.push(...processSimpleText(fullText));
+            }
+            
+            return hazards;
+        }
+        
+        function processFullTextAnnotation(fullTextAnnotation) {
+            const hazards = [];
+            const pages = fullTextAnnotation.pages || [];
+            
+            for (const page of pages) {
+                const blocks = page.blocks || [];
+                
+                // Find table blocks
+                for (const block of blocks) {
+                    const blockText = getBlockText(block).toUpperCase();
+                    
+                    // Look for UN numbers
+                    const unMatch = blockText.match(/UN\s*(\d{4})/);
+                    if (unMatch) {
+                        const hazard = {
+                            un: 'UN' + unMatch[1],
+                            psn: null,
+                            class: null,
+                            pg: null,
+                            confidence: block.confidence || 0,
+                            detectedText: blockText
+                        };
+                        
+                        // Extract other fields from block
+                        extractFieldsFromBlock(hazard, block, blocks);
+                        
+                        hazards.push(hazard);
+                    }
+                }
+            }
+            
+            return hazards;
+        }
+        
+        function getBlockText(block) {
+            let text = '';
+            for (const paragraph of (block.paragraphs || [])) {
+                for (const word of (paragraph.words || [])) {
+                    for (const symbol of (word.symbols || [])) {
+                        text += symbol.text || '';
+                    }
+                    text += ' ';
+                }
+            }
+            return text.trim();
+        }
+        
+        function extractFieldsFromBlock(hazard, currentBlock, allBlocks) {
+            const blockText = getBlockText(currentBlock).toUpperCase();
+            
+            // Extract class
+            const classMatch = blockText.match(/\b([1-9](?:\.\d)?)\b/);
+            if (classMatch) {
+                hazard.class = classMatch[1];
+            }
+            
+            // Extract PG
+            const pgMatch = blockText.match(/\b(I{1,3})\b/);
+            if (pgMatch && pgMatch[1] !== 'I') {
+                hazard.pg = pgMatch[1];
+            }
+            
+            // Extract PSN - more complex due to multi-line
+            let psnText = blockText
+                .replace(/UN\s*\d{4}/g, '')
+                .replace(/\b\d+(?:\.\d)?\b/g, '')
+                .replace(/\b(I{1,3})\b/g, '')
+                .trim();
+            
+            if (psnText && psnText.length > 3) {
+                hazard.psn = psnText;
+            }
+        }
+        
+        function processSimpleText(text) {
+            const hazards = [];
+            const lines = text.split('\n');
+            
+            // Process line by line
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].toUpperCase();
+                
+                // Look for UN numbers
+                const unMatch = line.match(/UN\s*(\d{4})/);
+                if (unMatch) {
+                    const hazard = {
+                        un: 'UN' + unMatch[1],
+                        psn: null,
+                        class: null,
+                        pg: null,
+                        confidence: 80, // Default confidence for simple processing
+                        detectedText: line
+                    };
+                    
+                    // Look for other fields in same and next lines
+                    extractFieldsFromLines(hazard, lines, i);
+                    
+                    hazards.push(hazard);
+                }
+            }
+            
+            return hazards;
+        }
+        
+        function extractFieldsFromLines(hazard, lines, startIndex) {
+            // Check current and next few lines
+            for (let i = startIndex; i < Math.min(startIndex + 5, lines.length); i++) {
+                const line = lines[i].toUpperCase();
+                
+                // Extract class if not found
+                if (!hazard.class) {
+                    const classMatch = line.match(/\b([1-9](?:\.\d)?)\b/);
+                    if (classMatch) {
+                        hazard.class = classMatch[1];
+                    }
+                }
+                
+                // Extract PG if not found
+                if (!hazard.pg) {
+                    const pgMatch = line.match(/\b(I{1,3})\b/);
+                    if (pgMatch && pgMatch[1] !== 'I') {
+                        hazard.pg = pgMatch[1];
+                    }
+                }
+                
+                // Build PSN from lines without UN/class/PG
+                if (i > startIndex) {
+                    const cleanLine = line
+                        .replace(/UN\s*\d{4}/g, '')
+                        .replace(/\b\d+(?:\.\d)?\b/g, '')
+                        .replace(/\b(I{1,3})\b/g, '')
+                        .trim();
+                    
+                    if (cleanLine && cleanLine.length > 2) {
+                        hazard.psn = (hazard.psn || '') + ' ' + cleanLine;
+                    }
+                }
+            }
+            
+            if (hazard.psn) {
+                hazard.psn = hazard.psn.trim();
+            }
+        }
+        
+        function validateHazard(hazard) {
+            const validation = {
+                hasErrors: false,
+                errors: {}
+            };
+            
+            // Check if UN number exists in database
+            const dbEntries = Object.entries(dgDatabase)
+                .filter(([key]) => key === hazard.un)
+                .map(([_, value]) => value);
+            
+            if (dbEntries.length === 0) {
+                validation.errors.un = 'UN number not in database';
+                validation.hasErrors = true;
+                return validation;
+            }
+            
+            // Find best matching entry
+            let bestMatch = null;
+            let bestScore = 0;
+            
+            for (const entry of dbEntries) {
+                const score = calculateMatchScore(hazard, entry);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMatch = entry;
+                }
+            }
+            
+            const dbEntry = bestMatch || dbEntries[0];
+            
+            // Validate PSN
+            if (!hazard.psn) {
+                validation.errors.psn = 'PSN not detected';
+                validation.hasErrors = true;
+            } else {
+                const detectedPSN = normalizeText(hazard.psn);
+                const expectedPSN = normalizeText(dbEntry.psn);
+                
+                if (!areSimilar(detectedPSN, expectedPSN, 0.7)) {
+                    validation.errors.psn = `Should be "${dbEntry.psn}"`;
+                    validation.hasErrors = true;
+                }
+            }
+            
+            // Validate Class
+            if (!hazard.class) {
+                validation.errors.class = 'Class not detected';
+                validation.hasErrors = true;
+            } else if (hazard.class !== dbEntry.class) {
+                validation.errors.class = `Should be Class ${dbEntry.class}`;
+                validation.hasErrors = true;
+            }
+            
+            // Validate PG
+            if (dbEntry.pg === null) {
+                if (hazard.pg) {
+                    validation.errors.pg = 'PG not used for this class';
+                    validation.hasErrors = true;
+                }
+            } else {
+                if (!hazard.pg) {
+                    validation.errors.pg = 'PG required';
+                    validation.hasErrors = true;
+                } else if (hazard.pg !== dbEntry.pg) {
+                    validation.errors.pg = `Should be ${dbEntry.pg}`;
+                    validation.hasErrors = true;
+                }
+            }
+            
+            return validation;
+        }
+        
+        function calculateMatchScore(hazard, entry) {
+            let score = 0;
+            
+            if (hazard.psn && entry.psn) {
+                const similarity = calculateSimilarity(
+                    normalizeText(hazard.psn),
+                    normalizeText(entry.psn)
+                );
+                score += similarity * 50;
+            }
+            
+            if (hazard.class === entry.class) {
+                score += 30;
+            }
+            
+            if (hazard.pg === entry.pg) {
+                score += 20;
+            }
+            
+            return score;
+        }
+        
+        function normalizeText(text) {
+            return text.replace(/[,\s]+/g, ' ').trim().toUpperCase();
+        }
+        
+        function areSimilar(str1, str2, threshold = 0.7) {
+            const similarity = calculateSimilarity(str1, str2);
+            return similarity >= threshold;
+        }
+        
+        function calculateSimilarity(str1, str2) {
+            const words1 = str1.split(' ').filter(w => w.length > 2);
+            const words2 = str2.split(' ').filter(w => w.length > 2);
+            
+            if (words1.length === 0 || words2.length === 0) return 0;
+            
+            let matches = 0;
+            for (const word of words1) {
+                if (words2.some(w => w.includes(word) || word.includes(w))) {
+                    matches++;
+                }
+            }
+            
+            return matches / Math.max(words1.length, words2.length);
+        }
+        
+        function displayResults(hazards) {
+            const resultsSection = document.getElementById('results');
+            resultsSection.style.display = 'block';
+            
+            let html = '<div class="results-content">';
+            
+            // Validate all hazards
+            const validatedHazards = hazards.map(h => ({
+                ...h,
+                validation: validateHazard(h)
+            }));
+            
+            const hasErrors = validatedHazards.some(h => h.validation.hasErrors);
+            const statusClass = hasErrors ? 'fail' : 'pass';
+            const statusText = hazards.length === 0 ? 'NO HAZARDS DETECTED' : 
+                              hasErrors ? 'ERRORS FOUND' : 'ALL VALID';
+            
+            html += `
+                <div class="results-header">
+                    <h2>Scan Results</h2>
+                    <div class="status-badge ${statusClass}">
+                        <span>${hazards.length === 0 ? '⚠️' : hasErrors ? '❌' : '✅'}</span>
+                        ${statusText}
+                    </div>
+                </div>
+            `;
+            
+            if (hazards.length === 0) {
+                html += '<p style="text-align: center; color: #999; padding: 40px 0;">No dangerous goods entries detected. Ensure the HAZDEC table is clearly visible and try again.</p>';
+            } else {
+                html += `
+                    <div class="table-container">
+                        <table class="hazards-table">
+                            <thead>
+                                <tr>
+                                    <th>UN/ID Number</th>
+                                    <th>Proper Shipping Name</th>
+                                    <th>Class</th>
+                                    <th>PG</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                for (const hazard of validatedHazards) {
+                    const validation = hazard.validation;
+                    const rowClass = validation.hasErrors ? 'error-row' : 'success-row';
+                    
+                    html += `<tr class="${rowClass}">`;
+                    
+                    // UN Number
+                    html += `<td><div class="cell-content">
+                        <span class="value">${hazard.un || 'Not detected'}</span>
+                        <span class="confidence">Conf: ${Math.round(hazard.confidence * 100)}%</span>
+                        ${validation.errors.un ? `<span class="error-text">${validation.errors.un}</span>` : ''}
+                    </div></td>`;
+                    
+                    // PSN
+                    html += `<td><div class="cell-content">
+                        <span class="value">${hazard.psn || 'Not detected'}</span>
+                        ${validation.errors.psn ? `<span class="error-text">${validation.errors.psn}</span>` : ''}
+                    </div></td>`;
+                    
+                    // Class
+                    html += `<td><div class="cell-content">
+                        <span class="value">${hazard.class || 'Not detected'}</span>
+                        ${validation.errors.class ? `<span class="error-text">${validation.errors.class}</span>` : ''}
+                    </div></td>`;
+                    
+                    // PG
+                    html += `<td><div class="cell-content">
+                        <span class="value">${hazard.pg || '-'}</span>
+                        ${validation.errors.pg ? `<span class="error-text">${validation.errors.pg}</span>` : ''}
+                    </div></td>`;
+                    
+                    // Status
+                    html += `<td><span class="status-icon">${validation.hasErrors ? '❌' : '✅'}</span></td>`;
+                    
+                    html += '</tr>';
+                }
+                
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            resultsSection.innerHTML = html;
+        }
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        });
+    </script>
+</body>
+</html>
