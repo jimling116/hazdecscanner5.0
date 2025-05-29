@@ -13,6 +13,12 @@ const visionClient = new ImageAnnotatorClient();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// Log all requests for debugging
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
+});
+
 // API Routes
 // OCR endpoint
 app.post('/api/ocr', async (req, res) => {
@@ -100,28 +106,91 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Serve the main HTML page explicitly
+// Serve the main HTML page explicitly with error handling
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  console.log('Root path requested, serving index.html');
+  const indexPath = path.join(__dirname, 'index.html');
+  console.log('Looking for index.html at:', indexPath);
+  
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      console.error('Error serving index.html:', err);
+      // Try to list files in directory for debugging
+      const fs = require('fs');
+      fs.readdir(__dirname, (dirErr, files) => {
+        if (!dirErr) {
+          console.log('Files in directory:', files);
+        }
+      });
+      res.status(404).send(`
+        <h1>Error: index.html not found</h1>
+        <p>Path attempted: ${indexPath}</p>
+        <p>Error details: ${err.message}</p>
+      `);
+    }
+  });
 });
 
-// Serve static files (JS, CSS, images, etc.)
-app.use(express.static(__dirname));
+// Also handle /index.html explicitly
+app.get('/index.html', (req, res) => {
+  console.log('index.html explicitly requested');
+  const indexPath = path.join(__dirname, 'index.html');
+  
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      console.error('Error serving index.html:', err);
+      res.status(404).send(`
+        <h1>Error: index.html not found</h1>
+        <p>Path attempted: ${indexPath}</p>
+        <p>Error details: ${err.message}</p>
+      `);
+    }
+  });
+});
+
+// Serve static files (JS, CSS, images, etc.) - but not as default
+app.get('/hazmat-database.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'hazmat-database.js'));
+});
+
+app.get('/*.js', (req, res) => {
+  res.sendFile(path.join(__dirname, req.path));
+});
+
+app.get('/*.css', (req, res) => {
+  res.sendFile(path.join(__dirname, req.path));
+});
 
 // 404 handler for unmatched routes
 app.use((req, res) => {
-  // If it's an API route, return JSON error
-  if (req.path.startsWith('/api/')) {
-    res.status(404).json({ error: 'API endpoint not found' });
-  } else {
-    // For other routes, try to serve index.html (SPA fallback)
-    res.sendFile(path.join(__dirname, 'index.html'));
-  }
+  console.log('404 - Unmatched route:', req.path);
+  res.status(404).send(`
+    <h1>404 - Not Found</h1>
+    <p>The requested path "${req.path}" was not found.</p>
+    <p><a href="/">Go to home page</a></p>
+  `);
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: err.message 
+  });
 });
 
 app.listen(port, () => {
   console.log(`HAZDEC Scanner server running on port ${port}`);
   console.log(`Health check: http://localhost:${port}/health`);
   console.log(`Using DOCUMENT_TEXT_DETECTION for better form recognition`);
-  console.log(`Static files served from: ${__dirname}`);
+  console.log(`Working directory: ${__dirname}`);
+  
+  // List files in directory on startup for debugging
+  const fs = require('fs');
+  fs.readdir(__dirname, (err, files) => {
+    if (!err) {
+      console.log('Files in server directory:', files);
+    }
+  });
 });
