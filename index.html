@@ -235,7 +235,7 @@
             text-align: center;
         }
 
-        /* Debug info */
+        /* Debug info - hidden by default */
         .debug-info {
             background: #2a2a2a;
             padding: 10px;
@@ -243,6 +243,19 @@
             margin-top: 10px;
             font-size: 12px;
             font-family: monospace;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        /* Debug toggle button */
+        .debug-toggle {
+            padding: 5px 10px;
+            font-size: 12px;
+            background: #48484A;
+            color: #8E8E93;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
         }
 
         @media (max-width: 600px) {
@@ -293,7 +306,14 @@
                 </button>
             </div>
             
-            <!-- Debug info (remove in production) -->
+            <!-- Debug toggle (small button in corner) -->
+            <div style="text-align: right; margin-top: 10px;">
+                <button onclick="toggleDebug()" class="debug-toggle">
+                    Debug
+                </button>
+            </div>
+            
+            <!-- Debug info - hidden by default -->
             <div id="debugInfo" class="debug-info" style="display: none;"></div>
         </div>
 
@@ -320,58 +340,13 @@
         <div id="messageContainer"></div>
     </div>
 
+    <!-- Load the external database file -->
+    <script src="hazmat-database.js"></script>
+    
     <script>
-        // Dangerous goods database
-        const dgDatabase = {
-            'UN1203': [
-                { psn: 'GASOLINE', class: '3', pg: 'II' },
-                { psn: 'PETROL', class: '3', pg: 'II' },
-                { psn: 'MOTOR SPIRIT', class: '3', pg: 'II' }
-            ],
-            'UN3528': [
-                { psn: 'ENGINE, INTERNAL COMBUSTION, FLAMMABLE LIQUID POWERED', class: '3', pg: null },
-                { psn: 'ENGINE, FUEL CELL, FLAMMABLE LIQUID POWERED', class: '3', pg: null },
-                { psn: 'MACHINERY, INTERNAL COMBUSTION, FLAMMABLE LIQUID POWERED', class: '3', pg: null },
-                { psn: 'MACHINERY, FUEL CELL, FLAMMABLE LIQUID POWERED', class: '3', pg: null }
-            ],
-            'UN3091': [
-                { psn: 'LITHIUM METAL BATTERIES CONTAINED IN EQUIPMENT', class: '9', pg: null },
-                { psn: 'LITHIUM METAL BATTERIES PACKED WITH EQUIPMENT', class: '9', pg: null }
-            ],
-            'UN3480': [
-                { psn: 'LITHIUM ION BATTERIES', class: '9', pg: null }
-            ],
-            'UN3481': [
-                { psn: 'LITHIUM ION BATTERIES CONTAINED IN EQUIPMENT', class: '9', pg: null },
-                { psn: 'LITHIUM ION BATTERIES PACKED WITH EQUIPMENT', class: '9', pg: null }
-            ],
-            'UN1993': [
-                { psn: 'FLAMMABLE LIQUID, N.O.S.', class: '3', pg: 'I' },
-                { psn: 'FLAMMABLE LIQUID, N.O.S.', class: '3', pg: 'II' },
-                { psn: 'FLAMMABLE LIQUID, N.O.S.', class: '3', pg: 'III' }
-            ],
-            'UN3082': [
-                { psn: 'ENVIRONMENTALLY HAZARDOUS SUBSTANCE, LIQUID, N.O.S.', class: '9', pg: 'III' }
-            ],
-            'UN2794': [
-                { psn: 'BATTERIES, WET, FILLED WITH ACID', class: '8', pg: null }
-            ],
-            'UN1263': [
-                { psn: 'PAINT', class: '3', pg: 'I' },
-                { psn: 'PAINT', class: '3', pg: 'II' },
-                { psn: 'PAINT', class: '3', pg: 'III' },
-                { psn: 'PAINT RELATED MATERIAL', class: '3', pg: 'I' },
-                { psn: 'PAINT RELATED MATERIAL', class: '3', pg: 'II' },
-                { psn: 'PAINT RELATED MATERIAL', class: '3', pg: 'III' }
-            ],
-            'UN1950': [
-                { psn: 'AEROSOLS', class: '2.1', pg: null },
-                { psn: 'AEROSOLS', class: '2.2', pg: null }
-            ]
-        };
-
+        // Main application code
         let stream = null;
-        let debugMode = true; // Set to false in production
+        let debugMode = false; // Debug mode off by default
 
         // Initialize camera on load
         window.addEventListener('DOMContentLoaded', () => {
@@ -448,34 +423,32 @@
             canvas.height = video.videoHeight;
             
             const ctx = canvas.getContext('2d');
-            // FIXED: Draw image normally without flipping
+            // Draw image normally without flipping
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             
-            // Optional: Apply image preprocessing for better OCR
-            if (true) { // Set to true to enable preprocessing
-                // Convert to grayscale
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const data = imageData.data;
-                
-                for (let i = 0; i < data.length; i += 4) {
-                    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-                    data[i] = gray;     // red
-                    data[i + 1] = gray; // green
-                    data[i + 2] = gray; // blue
-                }
-                
-                // Increase contrast
-                const contrast = 1.5; // Adjust this value (1 = no change, >1 = more contrast)
-                const intercept = 128 * (1 - contrast);
-                
-                for (let i = 0; i < data.length; i += 4) {
-                    data[i] = data[i] * contrast + intercept;
-                    data[i + 1] = data[i + 1] * contrast + intercept;
-                    data[i + 2] = data[i + 2] * contrast + intercept;
-                }
-                
-                ctx.putImageData(imageData, 0, 0);
+            // Apply image preprocessing for better OCR
+            // Convert to grayscale
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+                data[i] = gray;     // red
+                data[i + 1] = gray; // green
+                data[i + 2] = gray; // blue
             }
+            
+            // Increase contrast
+            const contrast = 1.5; // Adjust this value (1 = no change, >1 = more contrast)
+            const intercept = 128 * (1 - contrast);
+            
+            for (let i = 0; i < data.length; i += 4) {
+                data[i] = data[i] * contrast + intercept;
+                data[i + 1] = data[i + 1] * contrast + intercept;
+                data[i + 2] = data[i + 2] * contrast + intercept;
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
             
             capturedImage.src = canvas.toDataURL('image/jpeg', 0.9);
             capturedImage.style.display = 'block';
@@ -549,6 +522,8 @@
                     }
                     
                     debugDiv.innerHTML = debugHTML;
+                } else {
+                    document.getElementById('debugInfo').style.display = 'none';
                 }
                 
                 // Process with both full text and structured data
@@ -565,100 +540,82 @@
         }
 
         function processOCRResults(text, structuredBlocks = []) {
+            console.log('Processing OCR results...');
+            
+            // Try to use enhanced parsing if available
+            if (window.parseHAZDECLabel && window.validateHAZDEC) {
+                console.log('Using enhanced AFMAN 24-604 parsing...');
+                
+                // Use enhanced parsing
+                const parsed = window.parseHAZDECLabel(text, structuredBlocks);
+                const validation = window.validateHAZDEC(parsed);
+                
+                // Build result
+                const result = {
+                    unNumber: parsed.unNumber || 'Not detected',
+                    psn: parsed.psn || 'Not detected',
+                    class: parsed.hazClass || 'Not detected',
+                    packingGroup: parsed.packingGroup || '-',
+                    status: validation.valid ? '✅' : '❌',
+                    statusText: validation.valid ? 'Valid' : 'Invalid',
+                    errors: validation.errors,
+                    warnings: validation.warnings,
+                    confidence: parsed.unNumber ? '95%' : '0%'
+                };
+                
+                // If we detected a technical name for N.O.S. entries
+                if (parsed.technicalName) {
+                    result.technicalName = parsed.technicalName;
+                }
+                
+                return [result];
+            }
+            
+            // Fallback to basic parsing if enhanced functions not available
+            console.log('Using fallback parsing logic...');
             const results = [];
             
-            // Normalize text - preserve line breaks for better parsing
-            const normalizedText = text.toUpperCase();
-            const singleLineText = normalizedText.replace(/\s+/g, ' ');
-            
-            console.log('Processing text:', normalizedText);
-            console.log('Structured blocks:', structuredBlocks.length);
-            
-            // If we have high-confidence structured blocks, try to use those first
-            const highConfidenceBlocks = structuredBlocks.filter(b => b.confidence > 0.8);
-            if (highConfidenceBlocks.length > 0) {
-                console.log('Using high confidence blocks for parsing');
-            }
-            
-            // Extract UN number - try multiple patterns
+            // Initialize values
             let unNumber = null;
-            const unPatterns = [
-                /UN\s?(\d{4})/,
-                /\bID\s?(\d{4})/,
-                /(?:^|\s)(\d{4})(?:\s|$)/  // Any 4-digit number
-            ];
-            
-            for (const pattern of unPatterns) {
-                const match = normalizedText.match(pattern);
-                if (match) {
-                    unNumber = `UN${match[1]}`;
-                    console.log('Found UN number:', unNumber);
-                    break;
-                }
-            }
-            
-            // Extract PSN (Proper Shipping Name) - improved patterns
             let psn = null;
-            const psnPatterns = [
-                // Look for explicit labels
-                /PROPER\s+SHIPPING\s+NAME[:\s]+([A-Z][A-Z\s,\-\.]+?)(?=\n|CLASS|DIVISION|UN|\d{4}|$)/,
-                /SHIPPING\s+NAME[:\s]+([A-Z][A-Z\s,\-\.]+?)(?=\n|CLASS|DIVISION|UN|\d{4}|$)/,
-                // Look for PSN after UN number
-                /UN\d{4}\s+([A-Z][A-Z\s,\-\.]+?)(?=\n|CLASS|DIVISION|$)/,
-                // Look for common dangerous goods names
-                /((?:ENGINE|MACHINERY|BATTERY|BATTERIES|LITHIUM|GASOLINE|PETROL|PAINT|AEROSOL|FLAMMABLE)[A-Z\s,\-\.]*?)(?=\n|CLASS|DIVISION|$)/
-            ];
-            
-            for (const pattern of psnPatterns) {
-                const match = normalizedText.match(pattern);
-                if (match) {
-                    psn = match[1].trim().replace(/\s+/g, ' ');
-                    console.log('Found PSN:', psn);
-                    break;
-                }
-            }
-            
-            // Extract Class - improved patterns
             let hazClass = null;
-            const classPatterns = [
-                /CLASS[:\s]+(\d+\.?\d*)/,
-                /DIVISION[:\s]+(\d+\.?\d*)/,
-                /HAZARD\s+CLASS[:\s]+(\d+\.?\d*)/,
-                /\bCLASS\s+(\d+\.?\d*)/,
-                // Look for class number in isolation
-                /(?:^|\s)(\d\.\d)(?:\s|$)/,
-                /(?:^|\s)(\d)(?:\s|$)/
-            ];
+            let packingGroup = null;
             
-            for (const pattern of classPatterns) {
-                const match = normalizedText.match(pattern);
-                if (match) {
-                    hazClass = match[1];
-                    console.log('Found Class:', hazClass);
-                    break;
+            // Normalize text
+            const normalizedText = text.toUpperCase();
+            
+            // Extract UN number
+            const unMatch = normalizedText.match(/UN\s?(\d{4})/);
+            if (unMatch) {
+                unNumber = `UN${unMatch[1]}`;
+            }
+            
+            // Extract PSN
+            if (unNumber) {
+                const unIndex = normalizedText.indexOf(unNumber);
+                if (unIndex !== -1) {
+                    const afterUN = normalizedText.substring(unIndex + unNumber.length).trim();
+                    const psnMatch = afterUN.match(/^\s*([A-Z][A-Z\s,\-\.]+?)(?=CLASS|DIVISION|\d+\s|$)/);
+                    if (psnMatch) {
+                        psn = psnMatch[1].trim();
+                    }
                 }
             }
             
-            // Extract Packing Group - improved patterns
-            let packingGroup = null;
-            const pgPatterns = [
-                /PACKING\s+GROUP[:\s]+(I{1,3}|[123])/,
-                /\bPG[:\s]+(I{1,3}|[123])/,
-                /PACK\.?\s*GRP\.?[:\s]+(I{1,3}|[123])/,
-                /\b(I{1,3})\b(?!\s*\d)/  // Roman numerals not followed by digits
-            ];
+            // Extract hazard class
+            const classMatch = normalizedText.match(/(?:CLASS|DIVISION)[:\s]+(\d+\.?\d*)/);
+            if (classMatch) {
+                hazClass = classMatch[1];
+            }
             
-            for (const pattern of pgPatterns) {
-                const match = normalizedText.match(pattern);
-                if (match) {
-                    packingGroup = match[1];
-                    // Convert numbers to Roman numerals
-                    if (packingGroup === '1') packingGroup = 'I';
-                    if (packingGroup === '2') packingGroup = 'II';
-                    if (packingGroup === '3') packingGroup = 'III';
-                    console.log('Found PG:', packingGroup);
-                    break;
-                }
+            // Extract packing group
+            const pgMatch = normalizedText.match(/(?:PACKING GROUP|PG)[:\s]+(I{1,3}|[123])/);
+            if (pgMatch) {
+                packingGroup = pgMatch[1];
+                // Convert numbers to Roman numerals
+                if (packingGroup === '1') packingGroup = 'I';
+                if (packingGroup === '2') packingGroup = 'II';
+                if (packingGroup === '3') packingGroup = 'III';
             }
             
             // Validate against database
@@ -666,19 +623,26 @@
             let statusText = 'Invalid';
             let errors = [];
             
-            if (unNumber && dgDatabase[unNumber]) {
-                const validEntries = dgDatabase[unNumber];
+            const database = window.dgDatabase || dgDatabase;
+            
+            if (unNumber && database[unNumber]) {
+                const validEntries = database[unNumber];
                 let matchFound = false;
                 
                 for (const entry of validEntries) {
                     const psnMatch = psn && fuzzyMatch(psn, entry.psn);
                     const classMatch = hazClass === entry.class;
-                    const pgMatch = !entry.pg || packingGroup === entry.pg;
+                    const pgMatch = !entry.pg || !packingGroup || packingGroup === entry.pg;
                     
                     if (psnMatch && classMatch && pgMatch) {
                         matchFound = true;
                         validationStatus = '✅';
                         statusText = 'Valid';
+                        
+                        // If database says no PG required, clear any detected PG
+                        if (!entry.pg) {
+                            packingGroup = '-';
+                        }
                         break;
                     }
                 }
@@ -690,8 +654,11 @@
                     if (!hazClass) errors.push('Class not detected');
                     else if (!validEntries.some(e => hazClass === e.class)) errors.push('Invalid Class');
                     
-                    if (validEntries.some(e => e.pg) && !packingGroup) errors.push('PG not detected');
-                    else if (packingGroup && !validEntries.some(e => !e.pg || packingGroup === e.pg)) errors.push('Invalid PG');
+                    if (validEntries.some(e => e.pg) && !packingGroup) {
+                        errors.push('PG required but not detected');
+                    } else if (packingGroup && packingGroup !== '-' && validEntries.every(e => !e.pg)) {
+                        errors.push('PG not required for this UN');
+                    }
                 }
             } else if (!unNumber) {
                 errors.push('UN number not detected');
@@ -714,7 +681,12 @@
         }
 
         function fuzzyMatch(str1, str2) {
-            // Improved fuzzy matching
+            // Use the enhanced fuzzy match if available
+            if (window.fuzzyMatch) {
+                return window.fuzzyMatch(str1, str2);
+            }
+            
+            // Fallback fuzzy matching
             const clean1 = str1.replace(/[^A-Z0-9]/g, '').toUpperCase();
             const clean2 = str2.replace(/[^A-Z0-9]/g, '').toUpperCase();
             
@@ -785,6 +757,15 @@
 
         function clearMessage() {
             document.getElementById('messageContainer').innerHTML = '';
+        }
+        
+        function toggleDebug() {
+            debugMode = !debugMode;
+            const debugDiv = document.getElementById('debugInfo');
+            if (!debugMode) {
+                debugDiv.style.display = 'none';
+            }
+            console.log('Debug mode:', debugMode);
         }
     </script>
 </body>
