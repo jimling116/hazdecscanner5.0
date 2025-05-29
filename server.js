@@ -33,18 +33,56 @@ app.post('/api/ocr', async (req, res) => {
     // Convert base64 to buffer
     const imageBuffer = Buffer.from(image, 'base64');
 
-    // Call Google Vision API
-    const [result] = await visionClient.textDetection({
-      image: { content: imageBuffer }
+    // IMPORTANT CHANGE: Use documentTextDetection instead of textDetection
+    // This provides better structure recognition for forms and labels
+    const [result] = await visionClient.documentTextDetection({
+      image: { content: imageBuffer },
+      imageContext: {
+        // Help the OCR understand we're looking for structured text
+        languageHints: ['en']
+      }
     });
 
     console.log('OCR processing completed');
 
-    // Return structured response
+    // Extract the full document text
+    const fullText = result.fullTextAnnotation?.text || '';
+    
+    // Log what we found for debugging
+    console.log('Extracted text preview:', fullText.substring(0, 200) + '...');
+    
+    // Extract structured data with bounding boxes
+    const pages = result.fullTextAnnotation?.pages || [];
+    const blocks = pages[0]?.blocks || [];
+    
+    // Create a structured response with text and positional data
+    const structuredText = blocks.map(block => {
+      const blockText = block.paragraphs
+        ?.map(p => p.words
+          ?.map(w => w.symbols
+            ?.map(s => s.text || '').join('')
+          ).join(' ')
+        ).join('\n') || '';
+      
+      return {
+        text: blockText,
+        confidence: block.confidence || 0,
+        boundingBox: block.boundingBox
+      };
+    });
+
+    // Return comprehensive response
     res.json({
+      text: fullText,
       textAnnotations: result.textAnnotations || [],
       fullTextAnnotation: result.fullTextAnnotation || null,
-      text: result.textAnnotations?.[0]?.description || ''
+      structuredText: structuredText,
+      // Include page-level data for spatial analysis
+      pages: pages.map(page => ({
+        width: page.width,
+        height: page.height,
+        blocks: page.blocks?.length || 0
+      }))
     });
 
   } catch (error) {
@@ -61,7 +99,8 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
     timestamp: new Date().toISOString(),
-    service: 'hazdec-scanner'
+    service: 'hazdec-scanner',
+    ocrMode: 'documentTextDetection'
   });
 });
 
@@ -73,4 +112,5 @@ app.get('*', (req, res) => {
 app.listen(port, () => {
   console.log(`HAZDEC Scanner server running on port ${port}`);
   console.log(`Health check: http://localhost:${port}/health`);
-}); 
+  console.log(`Using DOCUMENT_TEXT_DETECTION for better form recognition`);
+});
