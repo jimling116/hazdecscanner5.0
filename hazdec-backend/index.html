@@ -517,20 +517,6 @@
         </div>
         
         <div class="main-content">
-            <div class="config-section">
-                <h3>API Configuration</h3>
-                <input 
-                    type="text" 
-                    id="apiEndpoint" 
-                    class="config-input" 
-                    placeholder="https://your-api-endpoint.netlify.app/.netlify/functions/ocr"
-                    value=""
-                >
-                <p style="font-size: 12px; color: #666; margin-top: 8px;">
-                    Enter your backend API endpoint (see setup instructions)
-                </p>
-            </div>
-            
             <div class="camera-section">
                 <video id="video" autoplay playsinline></video>
                 <img id="capturedImage" style="display: none;">
@@ -750,12 +736,8 @@
         }
         
         async function analyze() {
-            const apiEndpoint = document.getElementById('apiEndpoint').value;
-            
-            if (!apiEndpoint) {
-                showError('Please enter your API endpoint URL in the configuration section.');
-                return;
-            }
+            // For Cloud Run, we use relative URL since frontend and backend are served together
+            const apiEndpoint = '/api/ocr';
             
             const analyzeBtn = document.getElementById('analyzeBtn');
             const overlay = document.getElementById('processingOverlay');
