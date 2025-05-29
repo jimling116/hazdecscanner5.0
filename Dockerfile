@@ -4,8 +4,8 @@ WORKDIR /usr/src/app
 # Copy package files from root
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install dependencies (using npm install instead of npm ci)
+RUN npm install --only=production
 
 # Copy all application files
 COPY . .
