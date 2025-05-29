@@ -225,6 +225,39 @@ function parseHAZDECLabel(text, blocks = []) {
         }
     }
     
+    // Look for class number in structured blocks
+    if (!result.hazClass && blocks.length > 0) {
+        for (let i = 0; i < blocks.length; i++) {
+            const blockText = blocks[i].text.trim().toUpperCase();
+            
+            // Look for "CLASS OR DIVISION" header
+            if (blockText.includes('CLASS') && blockText.includes('DIVISION')) {
+                console.log(`Found CLASS OR DIVISION header in block ${i}`);
+                
+                // The class number should be in the next block or nearby
+                for (let j = i + 1; j < Math.min(i + 5, blocks.length); j++) {
+                    const nextBlock = blocks[j].text.trim();
+                    
+                    // Skip headers and labels
+                    if (nextBlock.toUpperCase().includes('SUBSIDIARY') || 
+                        nextBlock.toUpperCase().includes('RISK') ||
+                        nextBlock.toUpperCase().includes('PROPER') ||
+                        nextBlock.toUpperCase().includes('SHIPPING')) {
+                        continue;
+                    }
+                    
+                    // Check if it's a class number (single digit or digit.digit)
+                    if (/^[1-9](\.[0-9])?$/.test(nextBlock)) {
+                        result.hazClass = nextBlock;
+                        console.log(`Found hazard class: ${result.hazClass} in block ${j}`);
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+    }
+    
     // Extract Packing Group
     const pgPatterns = [
         /(?:PACKING\s+GROUP)[:\s]+(I{1,3}|[123])/,
