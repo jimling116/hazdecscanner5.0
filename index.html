@@ -359,6 +359,11 @@
                 </tbody>
             </table>
             
+            <!-- Subsidiary Hazard Display -->
+            <div id="subsidiaryInfo" style="margin-top: 15px; padding: 10px; background: #2a2a2a; border-radius: 10px; display: none;">
+                <strong style="color: #FF9500;">Subsidiary Hazard:</strong> <span id="subsidiaryValue"></span>
+            </div>
+            
             <!-- Warnings section -->
             <div id="warningsSection" class="warnings-section" style="display: none;">
                 <h3>⚠️ Warnings</h3>
@@ -577,6 +582,7 @@
                     psn: parsed.psn || 'Not detected',
                     class: parsed.hazClass || 'Not detected',
                     packingGroup: parsed.packingGroup || '-',
+                    subsidiaryHazard: parsed.subsidiaryHazard || null,
                     status: validation.valid ? '✅' : '❌',
                     statusText: validation.valid ? 'Valid' : 'Invalid',
                     errors: validation.errors,
@@ -593,6 +599,7 @@
                     psn: 'Database not loaded',
                     class: '-',
                     packingGroup: '-',
+                    subsidiaryHazard: null,
                     status: '❌',
                     statusText: 'Error',
                     errors: ['Database file not loaded'],
@@ -608,12 +615,15 @@
             const statusBadge = document.getElementById('statusBadge');
             const warningsSection = document.getElementById('warningsSection');
             const warningsList = document.getElementById('warningsList');
+            const subsidiaryInfo = document.getElementById('subsidiaryInfo');
+            const subsidiaryValue = document.getElementById('subsidiaryValue');
             
             resultsBody.innerHTML = '';
             warningsList.innerHTML = '';
             
             const hasErrors = results.some(r => r.status === '❌');
             const hasWarnings = results.some(r => r.warnings && r.warnings.length > 0);
+            const hasSubsidiary = results.some(r => r.subsidiaryHazard);
             
             statusBadge.textContent = hasErrors ? '❌ ERRORS FOUND' : hasWarnings ? '⚠️ VALID WITH WARNINGS' : '✅ VALID';
             statusBadge.className = hasErrors ? 'status-badge status-error' : hasWarnings ? 'status-badge status-warning' : 'status-badge status-success';
@@ -645,6 +655,12 @@
                 `;
                 resultsBody.appendChild(row);
                 
+                // Display subsidiary hazard if present
+                if (result.subsidiaryHazard) {
+                    subsidiaryInfo.style.display = 'block';
+                    subsidiaryValue.textContent = `Class ${result.subsidiaryHazard}`;
+                }
+                
                 // Display warnings if any
                 if (result.warnings && result.warnings.length > 0) {
                     result.warnings.forEach(warning => {
@@ -654,6 +670,9 @@
                     });
                 }
             });
+            
+            // Show/hide subsidiary info
+            subsidiaryInfo.style.display = hasSubsidiary ? 'block' : 'none';
             
             // Show warnings section if there are warnings
             warningsSection.style.display = hasWarnings ? 'block' : 'none';
