@@ -2,16 +2,14 @@
 // This database covers all UN numbers from UN0001 through UN3548
 // Last updated: 2024
 
-const dgDatabase = {
-    // ===== /**
+/**
  * Complete UN Dangerous Goods Database
  * Based on UN Model Regulations, IATA DGR, and AFMAN 24-604
  * Version: 2024.1
  * 
  * This database contains ALL commonly used UN numbers for dangerous goods transportation
  */
-
-const COMPLETE_DG_DATABASE = {
+const dgDatabase = {
     // ============================================
     // CLASS 1 - EXPLOSIVES
     // ============================================
