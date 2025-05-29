@@ -360,22 +360,68 @@
         let stream = null;
 
         // Initialize camera on load
-        window.addEventListener('load', initCamera);
+        window.addEventListener('DOMContentLoaded', () => {
+            initCamera();
+        });
 
         async function initCamera() {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        facingMode: 'environment',
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 }
-                    } 
-                });
+                // First check if we have camera permissions
+                const permissions = await navigator.permissions.query({ name: 'camera' });
+                console.log('Camera permission status:', permissions.state);
+
+                // Request camera access with multiple fallback options
+                const constraints = [
+                    { video: { facingMode: 'environment' } },
+                    { video: { facingMode: { exact: 'environment' } } },
+                    { video: { facingMode: 'user' } },
+                    { video: true }
+                ];
+
+                let videoStream = null;
+                
+                for (const constraint of constraints) {
+                    try {
+                        videoStream = await navigator.mediaDevices.getUserMedia(constraint);
+                        console.log('Camera initialized with constraint:', constraint);
+                        break;
+                    } catch (e) {
+                        console.log('Failed with constraint:', constraint, e);
+                        continue;
+                    }
+                }
+
+                if (!videoStream) {
+                    throw new Error('Could not access any camera');
+                }
+
+                stream = videoStream;
                 const video = document.getElementById('video');
                 video.srcObject = stream;
+                
+                // Ensure video plays
+                video.onloadedmetadata = () => {
+                    video.play().catch(e => console.error('Video play error:', e));
+                };
+                
             } catch (err) {
-                showMessage('Camera access denied. Please enable camera permissions.', 'error');
                 console.error('Error accessing camera:', err);
+                
+                // Provide more specific error messages
+                let errorMessage = 'Camera error: ';
+                if (err.name === 'NotAllowedError') {
+                    errorMessage += 'Camera access denied. Please enable camera permissions and refresh the page.';
+                } else if (err.name === 'NotFoundError') {
+                    errorMessage += 'No camera found on this device.';
+                } else if (err.name === 'NotReadableError') {
+                    errorMessage += 'Camera is already in use by another application.';
+                } else if (err.name === 'OverconstrainedError') {
+                    errorMessage += 'Camera constraints could not be satisfied.';
+                } else {
+                    errorMessage += err.message;
+                }
+                
+                showMessage(errorMessage, 'error');
             }
         }
 
