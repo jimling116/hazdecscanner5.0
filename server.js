@@ -6,19 +6,14 @@ const path = require('path');
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.static('.')); // Serve files from root directory
-
 // Initialize Google Vision client (credentials handled automatically in Cloud Run)
 const visionClient = new ImageAnnotatorClient();
 
-// Serve the main HTML page
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
+// Middleware
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
 
+// API Routes
 // OCR endpoint
 app.post('/api/ocr', async (req, res) => {
   try {
@@ -100,17 +95,33 @@ app.get('/health', (req, res) => {
     status: 'healthy', 
     timestamp: new Date().toISOString(),
     service: 'hazdec-scanner',
-    ocrMode: 'documentTextDetection'
+    ocrMode: 'documentTextDetection',
+    version: '1.0.0'
   });
 });
 
-// Handle 404s
-app.get('*', (req, res) => {
-  res.status(404).json({ error: 'Endpoint not found' });
+// Serve the main HTML page explicitly
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Serve static files (JS, CSS, images, etc.)
+app.use(express.static(__dirname));
+
+// 404 handler for unmatched routes
+app.use((req, res) => {
+  // If it's an API route, return JSON error
+  if (req.path.startsWith('/api/')) {
+    res.status(404).json({ error: 'API endpoint not found' });
+  } else {
+    // For other routes, try to serve index.html (SPA fallback)
+    res.sendFile(path.join(__dirname, 'index.html'));
+  }
 });
 
 app.listen(port, () => {
   console.log(`HAZDEC Scanner server running on port ${port}`);
   console.log(`Health check: http://localhost:${port}/health`);
   console.log(`Using DOCUMENT_TEXT_DETECTION for better form recognition`);
+  console.log(`Static files served from: ${__dirname}`);
 });
