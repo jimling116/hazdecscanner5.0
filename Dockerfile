@@ -1,7 +1,17 @@
 FROM node:18-slim
 WORKDIR /usr/src/app
-COPY hazdec-backend/package*.json ./
+
+# Copy package files from root
+COPY package*.json ./
+
+# Install dependencies
 RUN npm ci --only=production
-COPY hazdec-backend/ .
+
+# Copy all application files
+COPY . .
+
+# Expose port
 EXPOSE 8080
+
+# Start the application
 CMD ["npm", "start"]
