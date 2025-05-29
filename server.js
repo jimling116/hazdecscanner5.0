@@ -1,6 +1,7 @@
 const express = require('express');
 const { ImageAnnotatorClient } = require('@google-cloud/vision');
 const cors = require('cors');
+const fs = require('fs');
 const path = require('path');
 
 const app = express();
@@ -19,7 +20,56 @@ app.use((req, res, next) => {
   next();
 });
 
-// API Routes
+// CRITICAL: Serve index.html explicitly for root path
+app.get('/', (req, res) => {
+  console.log('Root path requested');
+  const indexPath = path.join(__dirname, 'index.html');
+  
+  // Check if file exists
+  if (fs.existsSync(indexPath)) {
+    console.log('Serving index.html');
+    const htmlContent = fs.readFileSync(indexPath, 'utf8');
+    res.type('html').send(htmlContent);
+  } else {
+    console.error('index.html not found at:', indexPath);
+    res.status(404).send(`
+      <h1>Error: index.html not found</h1>
+      <p>Expected location: ${indexPath}</p>
+      <p>Files in directory: ${fs.readdirSync(__dirname).join(', ')}</p>
+    `);
+  }
+});
+
+// Serve hazmat-database.js explicitly
+app.get('/hazmat-database.js', (req, res) => {
+  const filePath = path.join(__dirname, 'hazmat-database.js');
+  if (fs.existsSync(filePath)) {
+    res.type('application/javascript').sendFile(filePath);
+  } else {
+    res.status(404).send('hazmat-database.js not found');
+  }
+});
+
+// Serve any other JavaScript files
+app.get('/*.js', (req, res) => {
+  const filePath = path.join(__dirname, req.path);
+  if (fs.existsSync(filePath) && req.path !== '/server.js') { // Don't serve server.js
+    res.type('application/javascript').sendFile(filePath);
+  } else {
+    res.status(404).send('JavaScript file not found');
+  }
+});
+
+// Serve CSS files if any
+app.get('/*.css', (req, res) => {
+  const filePath = path.join(__dirname, req.path);
+  if (fs.existsSync(filePath)) {
+    res.type('text/css').sendFile(filePath);
+  } else {
+    res.status(404).send('CSS file not found');
+  }
+});
+
 // OCR endpoint
 app.post('/api/ocr', async (req, res) => {
   try {
@@ -34,12 +84,10 @@ app.post('/api/ocr', async (req, res) => {
     // Convert base64 to buffer
     const imageBuffer = Buffer.from(image, 'base64');
 
-    // IMPORTANT CHANGE: Use documentTextDetection instead of textDetection
-    // This provides better structure recognition for forms and labels
+    // Use documentTextDetection for better form recognition
     const [result] = await visionClient.documentTextDetection({
       image: { content: imageBuffer },
       imageContext: {
-        // Help the OCR understand we're looking for structured text
         languageHints: ['en']
       }
     });
@@ -49,14 +97,14 @@ app.post('/api/ocr', async (req, res) => {
     // Extract the full document text
     const fullText = result.fullTextAnnotation?.text || '';
     
-    // Log what we found for debugging
+    // Log preview for debugging
     console.log('Extracted text preview:', fullText.substring(0, 200) + '...');
     
     // Extract structured data with bounding boxes
     const pages = result.fullTextAnnotation?.pages || [];
     const blocks = pages[0]?.blocks || [];
     
-    // Create a structured response with text and positional data
+    // Create structured response
     const structuredText = blocks.map(block => {
       const blockText = block.paragraphs
         ?.map(p => p.words
@@ -78,7 +126,6 @@ app.post('/api/ocr', async (req, res) => {
       textAnnotations: result.textAnnotations || [],
       fullTextAnnotation: result.fullTextAnnotation || null,
       structuredText: structuredText,
-      // Include page-level data for spatial analysis
       pages: pages.map(page => ({
         width: page.width,
         height: page.height,
@@ -102,72 +149,33 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     service: 'hazdec-scanner',
     ocrMode: 'documentTextDetection',
-    version: '1.0.0'
+    version: '2.0.0'
   });
 });
 
-// Serve the main HTML page explicitly with error handling
-app.get('/', (req, res) => {
-  console.log('Root path requested, serving index.html');
-  const indexPath = path.join(__dirname, 'index.html');
-  console.log('Looking for index.html at:', indexPath);
+// Debug endpoint to see what files are in the container
+app.get('/debug', (req, res) => {
+  const files = fs.readdirSync(__dirname);
+  const indexExists = fs.existsSync(path.join(__dirname, 'index.html'));
+  const packageExists = fs.existsSync(path.join(__dirname, 'package.json'));
   
-  res.sendFile(indexPath, (err) => {
-    if (err) {
-      console.error('Error serving index.html:', err);
-      // Try to list files in directory for debugging
-      const fs = require('fs');
-      fs.readdir(__dirname, (dirErr, files) => {
-        if (!dirErr) {
-          console.log('Files in directory:', files);
-        }
-      });
-      res.status(404).send(`
-        <h1>Error: index.html not found</h1>
-        <p>Path attempted: ${indexPath}</p>
-        <p>Error details: ${err.message}</p>
-      `);
-    }
+  res.json({
+    workingDirectory: __dirname,
+    files: files,
+    indexHtmlExists: indexExists,
+    packageJsonExists: packageExists,
+    nodeVersion: process.version,
+    environment: process.env.NODE_ENV || 'not set'
   });
 });
 
-// Also handle /index.html explicitly
-app.get('/index.html', (req, res) => {
-  console.log('index.html explicitly requested');
-  const indexPath = path.join(__dirname, 'index.html');
-  
-  res.sendFile(indexPath, (err) => {
-    if (err) {
-      console.error('Error serving index.html:', err);
-      res.status(404).send(`
-        <h1>Error: index.html not found</h1>
-        <p>Path attempted: ${indexPath}</p>
-        <p>Error details: ${err.message}</p>
-      `);
-    }
-  });
-});
-
-// Serve static files (JS, CSS, images, etc.) - but not as default
-app.get('/hazmat-database.js', (req, res) => {
-  res.sendFile(path.join(__dirname, 'hazmat-database.js'));
-});
-
-app.get('/*.js', (req, res) => {
-  res.sendFile(path.join(__dirname, req.path));
-});
-
-app.get('/*.css', (req, res) => {
-  res.sendFile(path.join(__dirname, req.path));
-});
-
-// 404 handler for unmatched routes
+// 404 handler - MUST be last
 app.use((req, res) => {
-  console.log('404 - Unmatched route:', req.path);
+  console.log(`404 - Path not found: ${req.path}`);
   res.status(404).send(`
     <h1>404 - Not Found</h1>
-    <p>The requested path "${req.path}" was not found.</p>
-    <p><a href="/">Go to home page</a></p>
+    <p>The requested path "${req.path}" was not found on this server.</p>
+    <p><a href="/">Go to HAZDEC Scanner</a></p>
   `);
 });
 
@@ -180,17 +188,22 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Start server
 app.listen(port, () => {
   console.log(`HAZDEC Scanner server running on port ${port}`);
-  console.log(`Health check: http://localhost:${port}/health`);
-  console.log(`Using DOCUMENT_TEXT_DETECTION for better form recognition`);
   console.log(`Working directory: ${__dirname}`);
   
-  // List files in directory on startup for debugging
-  const fs = require('fs');
-  fs.readdir(__dirname, (err, files) => {
-    if (!err) {
-      console.log('Files in server directory:', files);
+  // List files on startup
+  const files = fs.readdirSync(__dirname);
+  console.log('Files in directory:', files);
+  
+  // Check for critical files
+  const criticalFiles = ['index.html', 'hazmat-database.js', 'package.json'];
+  criticalFiles.forEach(file => {
+    if (fs.existsSync(path.join(__dirname, file))) {
+      console.log(`✓ ${file} found`);
+    } else {
+      console.error(`✗ ${file} NOT FOUND - This will cause issues!`);
     }
   });
 });
