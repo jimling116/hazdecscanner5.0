@@ -165,6 +165,7 @@ function parseHAZDECLabel(text, blocks = []) {
         psn: null,
         hazClass: null,
         packingGroup: null,
+        subsidiaryHazard: null,
         errors: [],
         warnings: []
     };
@@ -186,32 +187,65 @@ function parseHAZDECLabel(text, blocks = []) {
         }
     }
     
-    // Extract PSN using blocks if available
+    // Extract PSN using blocks with better boundary detection
     if (result.unNumber && blocks.length > 0) {
+        // Find where the main form data ends (before Additional Handling Info)
+        let additionalHandlingIndex = blocks.findIndex(b => 
+            b.text.toUpperCase().includes('ADDITIONAL HANDLING')
+        );
+        
+        // Set search boundary
+        const searchEndIndex = additionalHandlingIndex !== -1 ? additionalHandlingIndex : blocks.length;
+        
+        // Find UN number block
         const unBlockIndex = blocks.findIndex(b => 
             b.text.toUpperCase().includes(result.unNumber.replace('UN', ''))
         );
         
         if (unBlockIndex !== -1) {
-            for (let i = unBlockIndex + 1; i < Math.min(unBlockIndex + 6, blocks.length); i++) {
+            // Look for PSN after UN number but before Additional Handling
+            for (let i = unBlockIndex + 1; i < Math.min(unBlockIndex + 10, searchEndIndex); i++) {
                 const blockText = blocks[i].text.trim().toUpperCase();
                 
+                // Skip headers and labels
                 const skipPatterns = [
-                    'PROPER SHIPPING NAME', 'CLASS', 'DIVISION', 
-                    'PACKING GROUP', 'UN OR ID', 'HAZARD'
+                    'PROPER SHIPPING NAME',
+                    'CLASS OR DIVISION',
+                    'PACKING GROUP',
+                    'SUBSIDIARY RISK',
+                    'UN OR ID',
+                    'HAZARD',
+                    'QUANTITY AND TYPE',
+                    'AUTHORIZATION'
                 ];
                 
-                if (skipPatterns.some(pattern => blockText.includes(pattern))) continue;
+                if (skipPatterns.some(pattern => blockText.includes(pattern))) {
+                    continue;
+                }
                 
-                if (blockText.length > 3 && /[A-Z]{3,}/.test(blockText) && !/^\d+$/.test(blockText)) {
-                    result.psn = blockText;
-                    break;
+                // Check if this looks like a PSN
+                if (blockText.length > 5 && /[A-Z]{3,}/.test(blockText) && !/^\d+$/.test(blockText)) {
+                    // Additional validation - must contain shipping name keywords
+                    const psnKeywords = ['ENGINE', 'BATTERY', 'FUEL', 'PAINT', 'AEROSOL', 
+                                       'FLAMMABLE', 'LIQUID', 'SOLID', 'GAS', 'COMPRESSED',
+                                       'MACHINERY', 'POWERED', 'COMBUSTION', 'CORROSIVE',
+                                       'OXIDIZING', 'TOXIC', 'ENVIRONMENTALLY'];
+                    
+                    if (psnKeywords.some(keyword => blockText.includes(keyword))) {
+                        result.psn = blockText;
+                        console.log(`Found PSN in block ${i}: ${result.psn}`);
+                        break;
+                    }
                 }
             }
         }
     }
     
-    // Extract Hazard Class
+    // Extract Hazard Class - HAZDEC specific parsing
+    // On HAZDEC forms, the class is a standalone number in its own field
+    let classHeaderIndex = -1;
+    
+    // First, try text patterns for inline class notation
     const classPatterns = [
         /(?:CLASS|DIVISION)[:\s]+(\d+\.?\d*)/,
         /(?:HAZARD\s+CLASS)[:\s]+(\d+\.?\d*)/
@@ -221,44 +255,125 @@ function parseHAZDECLabel(text, blocks = []) {
         const match = normalizedText.match(pattern);
         if (match) {
             result.hazClass = match[1];
+            console.log('Found inline hazard class:', result.hazClass);
             break;
         }
     }
     
-    // Look for class number in structured blocks
+    // HAZDEC-specific block parsing - Enhanced for better detection
     if (!result.hazClass && blocks.length > 0) {
+        // Method 1: Find CLASS/DIVISION header and look for number nearby
         for (let i = 0; i < blocks.length; i++) {
             const blockText = blocks[i].text.trim().toUpperCase();
             
-            // Look for "CLASS OR DIVISION" header
-            if (blockText.includes('CLASS') && blockText.includes('DIVISION')) {
-                console.log(`Found CLASS OR DIVISION header in block ${i}`);
+            // Look for CLASS or DIVISION header
+            if (blockText.includes('CLASS') || blockText.includes('DIVISION')) {
+                classHeaderIndex = i;
+                console.log(`Found CLASS/DIVISION header at block ${i}: "${blockText}"`);
                 
-                // The class number should be in the next block or nearby
-                for (let j = i + 1; j < Math.min(i + 5, blocks.length); j++) {
-                    const nextBlock = blocks[j].text.trim();
+                // Look for class number in next several blocks
+                for (let offset = 1; offset <= 10; offset++) {
+                    const targetIndex = classHeaderIndex + offset;
+                    if (targetIndex >= blocks.length) break;
                     
-                    // Skip headers and labels
-                    if (nextBlock.toUpperCase().includes('SUBSIDIARY') || 
-                        nextBlock.toUpperCase().includes('RISK') ||
-                        nextBlock.toUpperCase().includes('PROPER') ||
-                        nextBlock.toUpperCase().includes('SHIPPING')) {
-                        continue;
-                    }
+                    const candidateBlock = blocks[targetIndex].text.trim();
+                    console.log(`Checking block ${targetIndex} (offset +${offset}): "${candidateBlock}"`);
                     
-                    // Check if it's a class number (single digit or digit.digit)
-                    if (/^[1-9](\.[0-9])?$/.test(nextBlock)) {
-                        result.hazClass = nextBlock;
-                        console.log(`Found hazard class: ${result.hazClass} in block ${j}`);
+                    // Check for standalone class number
+                    if (/^[1-9](?:\.[1-9])?$/.test(candidateBlock)) {
+                        // Additional validation
+                        const prevBlock = targetIndex > 0 ? blocks[targetIndex - 1].text.toUpperCase() : '';
+                        const nextBlock = targetIndex < blocks.length - 1 ? blocks[targetIndex + 1].text.toUpperCase() : '';
+                        
+                        // Skip if part of UN number or measurements
+                        if (prevBlock.includes('UN') || prevBlock.includes('ID') || 
+                            nextBlock.includes('ML') || nextBlock.includes('OZ') ||
+                            prevBlock.includes('ADDITIONAL')) {
+                            continue;
+                        }
+                        
+                        result.hazClass = candidateBlock;
+                        console.log(`Found hazard class: ${result.hazClass} at block ${targetIndex}`);
                         break;
                     }
                 }
-                break;
+                
+                if (result.hazClass) break;
+            }
+        }
+        
+        // Method 2: Look for class in table cells near PSN
+        if (!result.hazClass && result.psn) {
+            const psnBlockIndex = blocks.findIndex(b => 
+                b.text.toUpperCase().includes(result.psn.substring(0, 20))
+            );
+            
+            if (psnBlockIndex !== -1) {
+                // Check blocks around PSN for class number
+                for (let offset = -5; offset <= 5; offset++) {
+                    const checkIndex = psnBlockIndex + offset;
+                    if (checkIndex >= 0 && checkIndex < blocks.length) {
+                        const blockText = blocks[checkIndex].text.trim();
+                        
+                        // Look for standalone class number
+                        if (/^[1-9](?:\.[1-9])?$/.test(blockText)) {
+                            // Make sure it's not a packing group
+                            const nearbyText = blocks.slice(Math.max(0, checkIndex - 2), Math.min(blocks.length, checkIndex + 3))
+                                .map(b => b.text.toUpperCase()).join(' ');
+                            
+                            if (!nearbyText.includes('PACKING') && !nearbyText.includes('GROUP')) {
+                                result.hazClass = blockText;
+                                console.log(`Found hazard class near PSN: ${result.hazClass} at block ${checkIndex}`);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Method 3: Pattern-based search in middle section
+        if (!result.hazClass) {
+            const startRange = Math.floor(blocks.length * 0.2);
+            const endRange = Math.floor(blocks.length * 0.8);
+            
+            for (let i = startRange; i < endRange; i++) {
+                const blockText = blocks[i].text.trim();
+                
+                // Check for standalone hazard class number
+                if (/^[1-9](?:\.[1-9])?$/.test(blockText)) {
+                    let contextScore = 0;
+                    
+                    // Check context around this number
+                    for (let j = Math.max(0, i - 5); j < Math.min(blocks.length, i + 5); j++) {
+                        const contextText = blocks[j].text.toUpperCase();
+                        if (contextText.includes('CLASS') || contextText.includes('DIVISION')) {
+                            contextScore += 3;
+                        }
+                        if (contextText.includes('SUBSIDIARY') || contextText.includes('RISK')) {
+                            contextScore += 2;
+                        }
+                        if (contextText.includes('PACKING') || contextText.includes('GROUP')) {
+                            contextScore -= 5; // Probably not the class
+                        }
+                        if (contextText.includes('ADDITIONAL')) {
+                            contextScore -= 3; // Too far down
+                        }
+                    }
+                    
+                    if (contextScore > 0) {
+                        result.hazClass = blockText;
+                        console.log(`Found hazard class (contextual): ${result.hazClass} at block ${i} with score ${contextScore}`);
+                        break;
+                    }
+                }
             }
         }
     }
     
-    // Extract Packing Group
+    console.log('Final hazard class:', result.hazClass || 'not found');
+    
+    // Extract Packing Group - with better context validation
     const pgPatterns = [
         /(?:PACKING\s+GROUP)[:\s]+(I{1,3}|[123])/,
         /\bPG[:\s]+(I{1,3}|[123])/
@@ -271,8 +386,51 @@ function parseHAZDECLabel(text, blocks = []) {
             if (result.packingGroup === '1') result.packingGroup = 'I';
             if (result.packingGroup === '2') result.packingGroup = 'II';
             if (result.packingGroup === '3') result.packingGroup = 'III';
+            console.log('Found packing group with pattern:', result.packingGroup);
             break;
         }
+    }
+    
+    // Block-based packing group detection with validation
+    if (!result.packingGroup && blocks.length > 0) {
+        for (let i = 0; i < blocks.length; i++) {
+            const blockText = blocks[i].text.trim().toUpperCase();
+            
+            // Look for PACKING GROUP header
+            if (blockText.includes('PACKING') && blockText.includes('GROUP')) {
+                console.log(`Found PACKING GROUP header at block ${i}`);
+                
+                // Check next few blocks for PG value
+                for (let j = i + 1; j < Math.min(i + 5, blocks.length); j++) {
+                    const nextBlock = blocks[j].text.trim();
+                    
+                    // Only accept standalone Roman numerals or numbers
+                    if (/^(I{1,3}|[123])$/.test(nextBlock)) {
+                        result.packingGroup = nextBlock;
+                        if (result.packingGroup === '1') result.packingGroup = 'I';
+                        if (result.packingGroup === '2') result.packingGroup = 'II';
+                        if (result.packingGroup === '3') result.packingGroup = 'III';
+                        console.log(`Found packing group: ${result.packingGroup} at block ${j}`);
+                        break;
+                    }
+                    
+                    // If we hit another header, stop looking
+                    if (nextBlock.toUpperCase().includes('AUTHORIZATION') ||
+                        nextBlock.toUpperCase().includes('ADDITIONAL') ||
+                        nextBlock.toUpperCase().includes('EMERGENCY')) {
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+    }
+    
+    // Extract Subsidiary Risk/Hazard (numbers in parentheses)
+    const subsidiaryMatch = normalizedText.match(/\(([1-9](?:\.[1-9])?)\)/);
+    if (subsidiaryMatch) {
+        result.subsidiaryHazard = subsidiaryMatch[1];
+        console.log('Found subsidiary hazard:', result.subsidiaryHazard);
     }
     
     return result;
@@ -296,21 +454,38 @@ function validateHAZDEC(parsedData) {
         return { valid: false, errors, warnings };
     }
     
+    // Check if this UN number requires a packing group
+    const requiresPG = validEntries.some(e => e.pg !== null);
+    const noPGAllowed = validEntries.every(e => e.pg === null);
+    
+    // If no PG is allowed for this UN number, clear any detected PG
+    if (noPGAllowed && packingGroup && packingGroup !== '-') {
+        console.log(`UN${unNumber} doesn't require PG, but detected: ${packingGroup}. Clearing it.`);
+        parsedData.packingGroup = '-';
+        warnings.push(`Packing group detected but not required for ${unNumber}`);
+    }
+    
     let matchFound = false;
     for (const entry of validEntries) {
         const psnMatch = psn && fuzzyMatch(psn, entry.psn);
         const classMatch = hazClass === entry.class;
         
+        // Check subsidiary hazard if present
+        let subsidiaryMatch = true;
+        if (entry.subsidiary && parsedData.subsidiaryHazard) {
+            subsidiaryMatch = parsedData.subsidiaryHazard === entry.subsidiary;
+        }
+        
         let pgMatch = true;
         if (entry.pg === null) {
-            if (packingGroup && packingGroup !== '-') {
-                warnings.push(`PG ${packingGroup} specified but not required`);
-            }
+            // This entry doesn't require a PG
+            pgMatch = true; // Always match if no PG required
         } else {
+            // This entry requires a specific PG
             pgMatch = packingGroup === entry.pg;
         }
         
-        if (psnMatch && classMatch && pgMatch) {
+        if (psnMatch && classMatch && pgMatch && subsidiaryMatch) {
             matchFound = true;
             break;
         }
@@ -320,6 +495,10 @@ function validateHAZDEC(parsedData) {
         if (!psn) errors.push('Proper Shipping Name not detected');
         else if (!validEntries.some(e => fuzzyMatch(psn, e.psn))) {
             errors.push(`Invalid PSN for ${unNumber}`);
+            const validPSNs = [...new Set(validEntries.map(e => e.psn))];
+            if (validPSNs.length <= 4) {
+                warnings.push(`Expected: ${validPSNs.join(' or ')}`);
+            }
         }
         
         if (!hazClass) errors.push('Hazard class not detected');
@@ -327,7 +506,6 @@ function validateHAZDEC(parsedData) {
             errors.push(`Invalid class ${hazClass} for ${unNumber}`);
         }
         
-        const requiresPG = validEntries.some(e => e.pg !== null);
         if (requiresPG && !packingGroup) {
             errors.push('Packing Group required but not detected');
         }
