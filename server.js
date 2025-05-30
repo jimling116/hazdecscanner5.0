@@ -1,7 +1,4 @@
-// Helper function to detect table structure in HAZDEC forms (fallback for compatibility)
-function detectTableStructure(blocks) {
-  return detectEnhancedTableStructure(blocks);
-}const express = require('express');
+const express = require('express');
 const { ImageAnnotatorClient } = require('@google-cloud/vision');
 const cors = require('cors');
 const path = require('path');
@@ -22,7 +19,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Enhanced OCR endpoint with highest quality settings
+// OCR endpoint with enhanced document text detection
 app.post('/api/ocr', async (req, res) => {
   try {
     const { image } = req.body;
@@ -31,26 +28,17 @@ app.post('/api/ocr', async (req, res) => {
       return res.status(400).json({ error: 'No image provided' });
     }
 
-    console.log('Processing OCR request with highest quality settings...');
+    console.log('Processing OCR request...');
 
     // Convert base64 to buffer
     const imageBuffer = Buffer.from(image, 'base64');
 
-    // Use DOCUMENT_TEXT_DETECTION with enhanced settings for maximum accuracy
+    // IMPORTANT: Use documentTextDetection for better structure recognition
     const [result] = await visionClient.documentTextDetection({
       image: { content: imageBuffer },
       imageContext: {
-        // Multiple language hints for better accuracy
-        languageHints: ['en', 'en-US'],
-        // Crop hints to focus on relevant areas (full image)
-        cropHintsParams: {
-          aspectRatios: [1.0, 1.5, 2.0]
-        },
-        // Enable all text detection features
-        textDetectionParams: {
-          enableTextDetectionConfidenceScore: true,
-          advancedOcrOptions: ['LEGACY_LAYOUT']
-        }
+        // Help the OCR understand we're looking for structured text
+        languageHints: ['en']
       }
     });
 
@@ -59,16 +47,14 @@ app.post('/api/ocr', async (req, res) => {
     // Extract the full document text
     const fullText = result.fullTextAnnotation?.text || '';
     
-    // Log confidence scores
-    const avgConfidence = result.fullTextAnnotation?.pages?.[0]?.confidence || 0;
-    console.log('OCR Confidence:', (avgConfidence * 100).toFixed(1) + '%');
-    console.log('Extracted text length:', fullText.length);
+    // Log preview for debugging
+    console.log('Extracted text preview:', fullText.substring(0, 200) + '...');
     
-    // Extract structured data with high confidence filtering
+    // Extract structured data with bounding boxes
     const pages = result.fullTextAnnotation?.pages || [];
     const blocks = pages[0]?.blocks || [];
     
-    // Create a structured response with text and positional data
+    // Create structured text response with confidence scores
     const structuredText = blocks.map(block => {
       const blockText = block.paragraphs
         ?.map(p => p.words
@@ -80,20 +66,69 @@ app.post('/api/ocr', async (req, res) => {
       return {
         text: blockText,
         confidence: block.confidence || 0,
-        boundingBox: block.boundingBox,
-        // Include paragraph-level data for better structure understanding
-        paragraphs: block.paragraphs?.map(p => ({
-          text: p.words?.map(w => w.symbols?.map(s => s.text || '').join('')).join(' ') || '',
-          confidence: p.confidence || 0
-        }))
+        boundingBox: block.boundingBox
       };
     });
 
-    // Enhanced table detection with better row/column alignment
-    const tableData = detectEnhancedTableStructure(blocks);
+    // Extract table data if detected
+    const tableData = [];
+    
+    // Process blocks to detect table-like structures
+    if (blocks.length > 0) {
+      let currentRow = [];
+      let lastY = null;
+      const yThreshold = 20; // Pixels threshold for same row
+      
+      blocks.forEach(block => {
+        if (block.boundingBox?.vertices) {
+          const avgY = block.boundingBox.vertices.reduce((sum, v) => sum + (v.y || 0), 0) / 4;
+          
+          // Check if this block is on a new row
+          if (lastY !== null && Math.abs(avgY - lastY) > yThreshold) {
+            if (currentRow.length > 0) {
+              tableData.push({
+                cells: currentRow.map(b => b.text),
+                confidence: currentRow.reduce((sum, b) => sum + b.confidence, 0) / currentRow.length
+              });
+            }
+            currentRow = [];
+          }
+          
+          const blockText = block.paragraphs
+            ?.map(p => p.words
+              ?.map(w => w.symbols
+                ?.map(s => s.text || '').join('')
+              ).join(' ')
+            ).join(' ') || '';
+          
+          currentRow.push({
+            text: blockText,
+            confidence: block.confidence || 0,
+            x: block.boundingBox.vertices[0].x || 0
+          });
+          
+          lastY = avgY;
+        }
+      });
+      
+      // Don't forget the last row
+      if (currentRow.length > 0) {
+        // Sort by x position to maintain column order
+        currentRow.sort((a, b) => a.x - b.x);
+        tableData.push({
+          cells: currentRow.map(b => b.text),
+          confidence: currentRow.reduce((sum, b) => sum + b.confidence, 0) / currentRow.length
+        });
+      }
+    }
 
-    // Also try to detect form fields specifically
-    const formFields = detectFormFields(blocks);
+    // Log structured data stats
+    console.log(`Found ${structuredText.length} text blocks`);
+    console.log(`Found ${tableData.length} potential table rows`);
+    
+    // High confidence blocks for debugging
+    const highConfBlocks = structuredText.filter(b => b.confidence > 0.9);
+    console.log(`High confidence blocks (>90%): ${highConfBlocks.length}`);
 
     // Return comprehensive response
     res.json({
@@ -102,203 +137,92 @@ app.post('/api/ocr', async (req, res) => {
       fullTextAnnotation: result.fullTextAnnotation || null,
       structuredText: structuredText,
       tableData: tableData,
-      formFields: formFields,
-      confidence: avgConfidence,
       // Include page-level data for spatial analysis
       pages: pages.map(page => ({
         width: page.width,
         height: page.height,
         blocks: page.blocks?.length || 0,
         confidence: page.confidence || 0
-      }))
+      })),
+      // Include detected languages
+      detectedLanguages: result.fullTextAnnotation?.pages?.[0]?.property?.detectedLanguages || [],
+      // Processing metadata
+      metadata: {
+        totalBlocks: blocks.length,
+        avgConfidence: structuredText.length > 0 
+          ? structuredText.reduce((sum, b) => sum + b.confidence, 0) / structuredText.length 
+          : 0,
+        hasTableStructure: tableData.length > 2,
+        ocrMode: 'documentTextDetection'
+      }
     });
 
   } catch (error) {
     console.error('OCR Error:', error);
+    
+    // Detailed error response
     res.status(500).json({
       error: 'OCR processing failed',
-      details: error.message
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
 
-// Enhanced table structure detection with better alignment
-function detectEnhancedTableStructure(blocks) {
-  const tableRows = [];
-  
-  // Create a map of blocks with their positions
-  const positionedBlocks = blocks.map(block => {
-    if (!block.boundingBox?.vertices) return null;
-    
-    const vertices = block.boundingBox.vertices;
-    const minY = Math.min(...vertices.map(v => v.y || 0));
-    const maxY = Math.max(...vertices.map(v => v.y || 0));
-    const minX = Math.min(...vertices.map(v => v.x || 0));
-    const maxX = Math.max(...vertices.map(v => v.x || 0));
-    
-    return {
-      text: extractBlockText(block),
-      confidence: block.confidence || 0,
-      minX, maxX, minY, maxY,
-      centerY: (minY + maxY) / 2,
-      centerX: (minX + maxX) / 2,
-      height: maxY - minY
-    };
-  }).filter(b => b !== null);
-  
-  // Group blocks into rows based on Y position
-  const rows = [];
-  const used = new Set();
-  
-  for (let i = 0; i < positionedBlocks.length; i++) {
-    if (used.has(i)) continue;
-    
-    const block = positionedBlocks[i];
-    const row = [block];
-    used.add(i);
-    
-    // Find other blocks on the same row (within height tolerance)
-    const tolerance = block.height * 0.5;
-    
-    for (let j = i + 1; j < positionedBlocks.length; j++) {
-      if (used.has(j)) continue;
-      
-      const otherBlock = positionedBlocks[j];
-      if (Math.abs(block.centerY - otherBlock.centerY) <= tolerance) {
-        row.push(otherBlock);
-        used.add(j);
-      }
-    }
-    
-    // Sort row by X position
-    row.sort((a, b) => a.centerX - b.centerX);
-    rows.push({
-      y: block.centerY,
-      cells: row.map(b => b.text),
-      confidence: Math.min(...row.map(b => b.confidence))
-    });
-  }
-  
-  // Sort rows by Y position
-  rows.sort((a, b) => a.y - b.y);
-  
-  // Filter out low confidence rows
-  return rows.filter(row => row.confidence > 0.7);
-}
-
-// Helper function to detect table structure in HAZDEC forms
-function detectTableStructure(blocks) {
-  const tableRows = [];
-  
-  // Group blocks by vertical position (Y coordinate)
-  const blocksByRow = {};
-  
-  blocks.forEach(block => {
-    if (block.boundingBox && block.boundingBox.vertices) {
-      // Get average Y position
-      const avgY = block.boundingBox.vertices.reduce((sum, v) => sum + (v.y || 0), 0) / 4;
-      const rowKey = Math.round(avgY / 20) * 20; // Group into 20px rows
-      
-      if (!blocksByRow[rowKey]) {
-        blocksByRow[rowKey] = [];
-      }
-      blocksByRow[rowKey].push({
-        text: extractBlockText(block),
-        x: block.boundingBox.vertices[0].x || 0,
-        confidence: block.confidence
-      });
-    }
-  });
-  
-  // Sort blocks within each row by X position
-  Object.keys(blocksByRow).forEach(rowKey => {
-    blocksByRow[rowKey].sort((a, b) => a.x - b.x);
-    tableRows.push({
-      y: parseInt(rowKey),
-      cells: blocksByRow[rowKey].map(b => b.text)
-    });
-  });
-  
-  // Sort rows by Y position
-  tableRows.sort((a, b) => a.y - b.y);
-  
-  return tableRows;
-}
-
-// Helper to extract text from a block
-function extractBlockText(block) {
-  return block.paragraphs
-    ?.map(p => p.words
-      ?.map(w => w.symbols
-        ?.map(s => s.text || '').join('')
-      ).join(' ')
-    ).join('\n') || '';
-}
-
-// Detect form fields for HAZDEC forms
-function detectFormFields(blocks) {
-  const fields = {};
-  
-  // Look for specific HAZDEC form fields
-  const fieldPatterns = {
-    unNumber: /UN\s?(\d{4})/,
-    properShippingName: /PROPER\s+SHIPPING\s+NAME/i,
-    hazardClass: /CLASS\s+OR\s+DIVISION/i,
-    packingGroup: /PACKING\s+GROUP/i,
-    additionalInfo: /ADDITIONAL\s+HANDLING/i
-  };
-  
-  for (let i = 0; i < blocks.length; i++) {
-    const blockText = extractBlockText(blocks[i]);
-    const upperText = blockText.toUpperCase();
-    
-    // Check for field labels
-    for (const [field, pattern] of Object.entries(fieldPatterns)) {
-      if (pattern.test(upperText)) {
-        // Look at next few blocks for the value
-        for (let j = i + 1; j < Math.min(i + 5, blocks.length); j++) {
-          const valueText = extractBlockText(blocks[j]).trim();
-          if (valueText && !Object.values(fieldPatterns).some(p => p.test(valueText.toUpperCase()))) {
-            if (!fields[field]) fields[field] = [];
-            fields[field].push({
-              label: blockText,
-              value: valueText,
-              confidence: blocks[j].confidence || 0
-            });
-            break;
-          }
-        }
-      }
-    }
-  }
-  
-  return fields;
-}
-
-// Health check endpoint
+// Health check endpoint with detailed status
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
     timestamp: new Date().toISOString(),
     service: 'hazdec-scanner',
+    version: '2.0',
     ocrMode: 'documentTextDetection',
-    features: ['multi-item', 'table-detection', 'enhanced-parsing']
+    environment: process.env.NODE_ENV || 'production'
+  });
+});
+
+// API info endpoint
+app.get('/api/info', (req, res) => {
+  res.json({
+    service: 'HAZDEC Scanner API',
+    version: '2.0',
+    endpoints: {
+      'POST /api/ocr': 'Process image for dangerous goods text extraction',
+      'GET /health': 'Service health check',
+      'GET /api/info': 'API information'
+    },
+    features: [
+      'Document text detection for structured forms',
+      'Table structure detection',
+      'Confidence scoring',
+      'Multi-language support (optimized for English)',
+      'High-resolution image processing'
+    ]
   });
 });
 
 // Handle 404s
 app.get('*', (req, res) => {
-  res.status(404).json({ error: 'Endpoint not found' });
+  res.status(404).json({ 
+    error: 'Endpoint not found',
+    availableEndpoints: ['/api/ocr', '/health', '/api/info']
+  });
 });
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'An error occurred processing your request'
+  });
+});
+
+// Start server
 app.listen(port, () => {
-  console.log(`HAZDEC Scanner server running on port ${port}`);
-  console.log(`Health check: http://localhost:${port}/health`);
-  console.log(`Using DOCUMENT_TEXT_DETECTION with enhanced settings`);
-  console.log(`Features: High-quality OCR, Table detection, Form field recognition`);
+  console.log(`🚀 HAZDEC Scanner server running on port ${port}`);
+  console.log(`📊 Health check: http://localhost:${port}/health`);
+  console.log(`ℹ️  API info: http://localhost:${port}/api/info`);
+  console.log(`🔍 Using DOCUMENT_TEXT_DETECTION for enhanced form recognition`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'production'}`);
 });
-
-// Helper function to detect table structure in HAZDEC forms (fallback for compatibility)
-function detectTableStructure(blocks) {
-  return detectEnhancedTableStructure(blocks);
-}
