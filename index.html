@@ -3,11 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HAZDEC Scanner</title>
-    
-    <!-- Load the hazmat database -->
-    <script src="hazmat-database.js"></script>
-    
+    <title>HAZDEC Scanner - Enhanced</title>
     <style>
         * {
             margin: 0;
@@ -26,7 +22,7 @@
         }
 
         .container {
-            max-width: 600px;
+            max-width: 800px;
             margin: 0 auto;
             padding: 20px;
             width: 100%;
@@ -50,7 +46,7 @@
         .video-container {
             position: relative;
             width: 100%;
-            max-width: 500px;
+            max-width: 600px;
             margin: 0 auto 20px;
             border-radius: 15px;
             overflow: hidden;
@@ -79,6 +75,7 @@
             gap: 15px;
             justify-content: center;
             margin-top: 20px;
+            flex-wrap: wrap;
         }
 
         button {
@@ -129,6 +126,36 @@
             transform: none;
         }
 
+        /* Scan mode toggle */
+        .scan-mode-container {
+            text-align: center;
+            margin: 15px 0;
+        }
+
+        .scan-mode-toggle {
+            display: inline-flex;
+            background: #2a2a2a;
+            border-radius: 25px;
+            padding: 5px;
+            gap: 5px;
+        }
+
+        .mode-btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 20px;
+            background: transparent;
+            color: #8E8E93;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .mode-btn.active {
+            background: #007AFF;
+            color: white;
+        }
+
         .results-container {
             background: #1a1a1a;
             border-radius: 20px;
@@ -142,6 +169,8 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
         }
 
         .results-header h2 {
@@ -160,14 +189,22 @@
             color: white;
         }
 
+        .status-warning {
+            background: #FF9500;
+            color: white;
+        }
+
         .status-error {
             background: #FF3B30;
             color: white;
         }
 
-        .status-warning {
-            background: #FF9500;
-            color: white;
+        .results-summary {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 14px;
         }
 
         .results-table {
@@ -251,34 +288,40 @@
             margin-top: 10px;
             font-size: 12px;
             font-family: monospace;
-            max-height: 200px;
+            max-height: 300px;
             overflow-y: auto;
-            display: none;
         }
 
-        /* Warnings section */
-        .warnings-section {
-            margin-top: 15px;
-            padding: 10px;
+        /* Processing tips */
+        .tips {
             background: #2a2a2a;
+            padding: 15px;
             border-radius: 10px;
+            margin-top: 20px;
+            font-size: 14px;
+            color: #8E8E93;
         }
 
-        .warnings-section h3 {
-            color: #FF9500;
-            font-size: 16px;
-            margin-bottom: 8px;
+        .tips h3 {
+            color: #fff;
+            margin-bottom: 10px;
         }
 
-        .warnings-section ul {
+        .tips ul {
             list-style: none;
             padding-left: 0;
         }
 
-        .warnings-section li {
-            color: #FF9500;
-            font-size: 14px;
-            margin-bottom: 4px;
+        .tips li {
+            padding: 5px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+
+        .tips li:before {
+            content: "•";
+            position: absolute;
+            left: 0;
         }
 
         @media (max-width: 600px) {
@@ -308,7 +351,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>📋 HAZDEC Scanner</h1>
+        <h1>📋 HAZDEC Scanner - Enhanced</h1>
         
         <div class="scanner-container">
             <div class="video-container" id="videoContainer">
@@ -316,6 +359,14 @@
                 <img id="capturedImage" class="captured-image" style="display: none;">
             </div>
             <canvas id="canvas"></canvas>
+            
+            <!-- Scan mode selector -->
+            <div class="scan-mode-container">
+                <div class="scan-mode-toggle">
+                    <button class="mode-btn active" onclick="setScanMode('single')">Single Item</button>
+                    <button class="mode-btn" onclick="setScanMode('multi')">Full Form</button>
+                </div>
+            </div>
             
             <div class="button-container">
                 <button id="captureBtn" class="capture-btn" onclick="capture()">
@@ -336,8 +387,8 @@
                 </button>
             </div>
             
-            <!-- Debug info -->
-            <div id="debugInfo" class="debug-info"></div>
+            <!-- Debug info - hidden by default -->
+            <div id="debugInfo" class="debug-info" style="display: none;"></div>
         </div>
 
         <div id="results" class="results-container" style="display: none;">
@@ -345,6 +396,7 @@
                 <h2>Scan Results</h2>
                 <span id="statusBadge" class="status-badge"></span>
             </div>
+            <div id="resultsSummary" class="results-summary"></div>
             <table class="results-table">
                 <thead>
                     <tr>
@@ -358,40 +410,138 @@
                 <tbody id="resultsBody">
                 </tbody>
             </table>
-            
-            <!-- Subsidiary Hazard Display -->
-            <div id="subsidiaryInfo" style="margin-top: 15px; padding: 10px; background: #2a2a2a; border-radius: 10px; display: none;">
-                <strong style="color: #FF9500;">Subsidiary Hazard:</strong> <span id="subsidiaryValue"></span>
-            </div>
-            
-            <!-- Warnings section -->
-            <div id="warningsSection" class="warnings-section" style="display: none;">
-                <h3>⚠️ Warnings</h3>
-                <ul id="warningsList"></ul>
-            </div>
+        </div>
+
+        <div class="tips">
+            <h3>📱 Scanning Tips</h3>
+            <ul>
+                <li><strong>Single Item Mode:</strong> Get close to individual hazard entries for best accuracy</li>
+                <li><strong>Full Form Mode:</strong> Capture the entire HAZDEC form - will detect multiple items</li>
+                <li>Ensure good lighting and minimize glare</li>
+                <li>Hold camera steady and wait for focus</li>
+                <li>For rotated labels, try landscape orientation</li>
+            </ul>
         </div>
 
         <div id="messageContainer"></div>
     </div>
 
     <script>
+        // Enhanced Dangerous goods database with AFMAN 24-604 data
+        const dgDatabase = {
+            // Class 1 - Explosives
+            'UN0012': [{ psn: 'CARTRIDGES FOR WEAPONS, INERT PROJECTILE', class: '1.4', pg: null, cgLetter: 'S' }],
+            'UN0328': [{ psn: 'CARTRIDGES FOR WEAPONS, INERT PROJECTILE', class: '1.2', pg: null, cgLetter: 'C' }],
+            
+            // Class 2 - Gases
+            'UN1950': [
+                { psn: 'AEROSOLS', class: '2.1', pg: null },
+                { psn: 'AEROSOLS, FLAMMABLE', class: '2.1', pg: null },
+                { psn: 'AEROSOLS, NON-FLAMMABLE', class: '2.2', pg: null }
+            ],
+            'UN1978': [{ psn: 'PROPANE', class: '2.1', pg: null }],
+            'UN2037': [{ psn: 'RECEPTACLES, SMALL, CONTAINING GAS', class: '2.1', pg: null }],
+            'UN3159': [
+                { psn: '1,1,1,2-TETRAFLUOROETHANE', class: '2.2', pg: null },
+                { psn: 'REFRIGERANT GAS R 134a', class: '2.2', pg: null }
+            ],
+            
+            // Class 3 - Flammable Liquids
+            'UN1203': [
+                { psn: 'GASOLINE', class: '3', pg: 'II' },
+                { psn: 'PETROL', class: '3', pg: 'II' },
+                { psn: 'MOTOR SPIRIT', class: '3', pg: 'II' }
+            ],
+            'UN1219': [
+                { psn: 'ISOPROPANOL', class: '3', pg: 'II' },
+                { psn: 'ISOPROPYL ALCOHOL', class: '3', pg: 'II' }
+            ],
+            'UN1263': [
+                { psn: 'PAINT', class: '3', pg: 'I' },
+                { psn: 'PAINT', class: '3', pg: 'II' },
+                { psn: 'PAINT', class: '3', pg: 'III' },
+                { psn: 'PAINT RELATED MATERIAL', class: '3', pg: 'I' },
+                { psn: 'PAINT RELATED MATERIAL', class: '3', pg: 'II' },
+                { psn: 'PAINT RELATED MATERIAL', class: '3', pg: 'III' }
+            ],
+            'UN1863': [
+                { psn: 'FUEL, AVIATION, TURBINE ENGINE', class: '3', pg: 'I' },
+                { psn: 'FUEL, AVIATION, TURBINE ENGINE', class: '3', pg: 'II' },
+                { psn: 'FUEL, AVIATION, TURBINE ENGINE', class: '3', pg: 'III' }
+            ],
+            'UN1993': [
+                { psn: 'FLAMMABLE LIQUID, N.O.S.', class: '3', pg: 'I' },
+                { psn: 'FLAMMABLE LIQUID, N.O.S.', class: '3', pg: 'II' },
+                { psn: 'FLAMMABLE LIQUID, N.O.S.', class: '3', pg: 'III' }
+            ],
+            'UN3166': [
+                { psn: 'VEHICLE, FLAMMABLE GAS POWERED', class: '9', pg: null },
+                { psn: 'VEHICLE, FLAMMABLE LIQUID POWERED', class: '9', pg: null }
+            ],
+            'UN3211': [
+                { psn: 'ENGINE, INTERNAL COMBUSTION, FLAMMABLE LIQUID POWERED', class: '9', pg: null },
+                { psn: 'ENGINE, INTERNAL COMBUSTION', class: '9', pg: null }
+            ],
+            'UN3528': [
+                { psn: 'ENGINE, INTERNAL COMBUSTION, FLAMMABLE LIQUID POWERED', class: '3', pg: null },
+                { psn: 'ENGINE, FUEL CELL, FLAMMABLE LIQUID POWERED', class: '3', pg: null },
+                { psn: 'MACHINERY, INTERNAL COMBUSTION, FLAMMABLE LIQUID POWERED', class: '3', pg: null },
+                { psn: 'MACHINERY, FUEL CELL, FLAMMABLE LIQUID POWERED', class: '3', pg: null }
+            ],
+            
+            // Class 4 - Flammable Solids
+            'UN1325': [
+                { psn: 'FLAMMABLE SOLID, ORGANIC, N.O.S.', class: '4.1', pg: 'II' },
+                { psn: 'FLAMMABLE SOLID, ORGANIC, N.O.S.', class: '4.1', pg: 'III' }
+            ],
+            
+            // Class 5 - Oxidizers
+            'UN1942': [{ psn: 'AMMONIUM NITRATE', class: '5.1', pg: 'III' }],
+            
+            // Class 6 - Toxic
+            'UN2810': [
+                { psn: 'TOXIC LIQUID, ORGANIC, N.O.S.', class: '6.1', pg: 'I' },
+                { psn: 'TOXIC LIQUID, ORGANIC, N.O.S.', class: '6.1', pg: 'II' },
+                { psn: 'TOXIC LIQUID, ORGANIC, N.O.S.', class: '6.1', pg: 'III' }
+            ],
+            
+            // Class 8 - Corrosives
+            'UN1789': [
+                { psn: 'HYDROCHLORIC ACID', class: '8', pg: 'II' },
+                { psn: 'HYDROCHLORIC ACID', class: '8', pg: 'III' }
+            ],
+            'UN2794': [{ psn: 'BATTERIES, WET, FILLED WITH ACID', class: '8', pg: null }],
+            'UN2800': [{ psn: 'BATTERIES, WET, NON-SPILLABLE', class: '8', pg: null }],
+            
+            // Class 9 - Miscellaneous
+            'UN3077': [{ psn: 'ENVIRONMENTALLY HAZARDOUS SUBSTANCE, SOLID, N.O.S.', class: '9', pg: 'III' }],
+            'UN3082': [{ psn: 'ENVIRONMENTALLY HAZARDOUS SUBSTANCE, LIQUID, N.O.S.', class: '9', pg: 'III' }],
+            'UN3091': [
+                { psn: 'LITHIUM METAL BATTERIES CONTAINED IN EQUIPMENT', class: '9', pg: null },
+                { psn: 'LITHIUM METAL BATTERIES PACKED WITH EQUIPMENT', class: '9', pg: null }
+            ],
+            'UN3171': [{ psn: 'BATTERY POWERED VEHICLE', class: '9', pg: null }],
+            'UN3480': [{ psn: 'LITHIUM ION BATTERIES', class: '9', pg: null }],
+            'UN3481': [
+                { psn: 'LITHIUM ION BATTERIES CONTAINED IN EQUIPMENT', class: '9', pg: null },
+                { psn: 'LITHIUM ION BATTERIES PACKED WITH EQUIPMENT', class: '9', pg: null }
+            ]
+        };
+
         let stream = null;
         let debugMode = false;
+        let scanMode = 'single'; // 'single' or 'multi'
 
         // Initialize camera on load
         window.addEventListener('DOMContentLoaded', () => {
             initCamera();
-            
-            // Check if database loaded
-            if (!window.dgDatabase) {
-                console.error('Hazmat database not loaded!');
-                showMessage('Warning: Database not loaded. Check hazmat-database.js', 'error');
-            }
         });
 
         async function initCamera() {
             try {
-                // Request camera access with multiple fallback options
+                const permissions = await navigator.permissions.query({ name: 'camera' });
+                console.log('Camera permission status:', permissions.state);
+
                 const constraints = [
                     { video: { facingMode: 'environment' } },
                     { video: { facingMode: { exact: 'environment' } } },
@@ -420,7 +570,6 @@
                 const video = document.getElementById('video');
                 video.srcObject = stream;
                 
-                // Ensure video plays
                 video.onloadedmetadata = () => {
                     video.play().catch(e => console.error('Video play error:', e));
                 };
@@ -435,12 +584,23 @@
                     errorMessage += 'No camera found on this device.';
                 } else if (err.name === 'NotReadableError') {
                     errorMessage += 'Camera is already in use by another application.';
+                } else if (err.name === 'OverconstrainedError') {
+                    errorMessage += 'Camera constraints could not be satisfied.';
                 } else {
                     errorMessage += err.message;
                 }
                 
                 showMessage(errorMessage, 'error');
             }
+        }
+
+        function setScanMode(mode) {
+            scanMode = mode;
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            console.log('Scan mode set to:', mode);
         }
 
         function capture() {
@@ -454,31 +614,56 @@
             const ctx = canvas.getContext('2d');
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             
-            // Apply image preprocessing for better OCR
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imageData.data;
-            
-            // Convert to grayscale
-            for (let i = 0; i < data.length; i += 4) {
-                const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-                data[i] = gray;
-                data[i + 1] = gray;
-                data[i + 2] = gray;
+            // Enhanced preprocessing for better OCR
+            if (scanMode === 'multi') {
+                // For full form scans, apply different preprocessing
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imageData.data;
+                
+                // Convert to grayscale
+                for (let i = 0; i < data.length; i += 4) {
+                    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+                    data[i] = gray;
+                    data[i + 1] = gray;
+                    data[i + 2] = gray;
+                }
+                
+                // Increase contrast more aggressively for full forms
+                const contrast = 2.0;
+                const intercept = 128 * (1 - contrast);
+                
+                for (let i = 0; i < data.length; i += 4) {
+                    data[i] = Math.min(255, Math.max(0, data[i] * contrast + intercept));
+                    data[i + 1] = Math.min(255, Math.max(0, data[i + 1] * contrast + intercept));
+                    data[i + 2] = Math.min(255, Math.max(0, data[i + 2] * contrast + intercept));
+                }
+                
+                ctx.putImageData(imageData, 0, 0);
+            } else {
+                // Standard preprocessing for single item
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imageData.data;
+                
+                for (let i = 0; i < data.length; i += 4) {
+                    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+                    data[i] = gray;
+                    data[i + 1] = gray;
+                    data[i + 2] = gray;
+                }
+                
+                const contrast = 1.5;
+                const intercept = 128 * (1 - contrast);
+                
+                for (let i = 0; i < data.length; i += 4) {
+                    data[i] = data[i] * contrast + intercept;
+                    data[i + 1] = data[i + 1] * contrast + intercept;
+                    data[i + 2] = data[i + 2] * contrast + intercept;
+                }
+                
+                ctx.putImageData(imageData, 0, 0);
             }
             
-            // Increase contrast
-            const contrast = 1.5;
-            const intercept = 128 * (1 - contrast);
-            
-            for (let i = 0; i < data.length; i += 4) {
-                data[i] = data[i] * contrast + intercept;
-                data[i + 1] = data[i + 1] * contrast + intercept;
-                data[i + 2] = data[i + 2] * contrast + intercept;
-            }
-            
-            ctx.putImageData(imageData, 0, 0);
-            
-            capturedImage.src = canvas.toDataURL('image/jpeg', 0.9);
+            capturedImage.src = canvas.toDataURL('image/jpeg', 0.95);
             capturedImage.style.display = 'block';
             video.style.display = 'none';
             
@@ -511,7 +696,7 @@
 
             try {
                 const canvas = document.getElementById('canvas');
-                const base64Image = canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
+                const base64Image = canvas.toDataURL('image/jpeg', 0.95).split(',')[1];
 
                 const response = await fetch('/api/ocr', {
                     method: 'POST',
@@ -540,7 +725,8 @@
                 if (debugMode) {
                     const debugDiv = document.getElementById('debugInfo');
                     debugDiv.style.display = 'block';
-                    let debugHTML = `<strong>OCR Extracted Text:</strong><br>${extractedText.replace(/\n/g, '<br>')}<br><br>`;
+                    let debugHTML = `<strong>Scan Mode: ${scanMode.toUpperCase()}</strong><br><br>`;
+                    debugHTML += `<strong>OCR Extracted Text:</strong><br>${extractedText.replace(/\n/g, '<br>')}<br><br>`;
                     
                     if (structuredText.length > 0) {
                         debugHTML += `<strong>Structured Blocks (${structuredText.length}):</strong><br>`;
@@ -550,10 +736,18 @@
                     }
                     
                     debugDiv.innerHTML = debugHTML;
+                } else {
+                    document.getElementById('debugInfo').style.display = 'none';
                 }
                 
-                // Process with both full text and structured data
-                const results = processOCRResults(extractedText, structuredText);
+                // Process based on scan mode
+                let results;
+                if (scanMode === 'multi') {
+                    results = processMultipleItems(extractedText, structuredText);
+                } else {
+                    results = processSingleItem(extractedText, structuredText);
+                }
+                
                 displayResults(results);
 
             } catch (error) {
@@ -565,71 +759,370 @@
             }
         }
 
-        function processOCRResults(text, structuredBlocks = []) {
-            console.log('Processing OCR results...');
+        // Process multiple items from a full HAZDEC form
+        function processMultipleItems(text, structuredBlocks) {
+            console.log('Processing multiple items from HAZDEC form...');
+            const results = [];
+            const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
             
-            // Use the enhanced parsing from hazmat-database.js
-            if (window.parseHAZDECLabel && window.validateHAZDEC) {
-                // Parse the HAZDEC label
-                const parsed = window.parseHAZDECLabel(text, structuredBlocks);
+            // Try to find the table structure
+            let inTable = false;
+            let currentItem = null;
+            
+            // Pattern to detect UN numbers
+            const unPattern = /UN\s?(\d{4})/;
+            
+            // Process line by line
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].toUpperCase();
                 
-                // Validate against database
-                const validation = window.validateHAZDEC(parsed);
+                // Check if we're in the dangerous goods section
+                if (line.includes('DANGEROUS GOODS IDENTIFICATION') || 
+                    line.includes('UN OR ID NO')) {
+                    inTable = true;
+                    continue;
+                }
                 
-                // Build result
-                const result = {
-                    unNumber: parsed.unNumber || 'Not detected',
-                    psn: parsed.psn || 'Not detected',
-                    class: parsed.hazClass || 'Not detected',
-                    packingGroup: parsed.packingGroup || '-',
-                    subsidiaryHazard: parsed.subsidiaryHazard || null,
-                    status: validation.valid ? '✅' : '❌',
-                    statusText: validation.valid ? 'Valid' : 'Invalid',
-                    errors: validation.errors,
-                    warnings: validation.warnings,
-                    confidence: parsed.unNumber ? '95%' : '0%'
-                };
+                if (!inTable) continue;
                 
-                return [result];
-            } else {
-                // Fallback if database not loaded
-                console.error('Database not loaded!');
-                return [{
-                    unNumber: 'Error',
-                    psn: 'Database not loaded',
-                    class: '-',
-                    packingGroup: '-',
-                    subsidiaryHazard: null,
-                    status: '❌',
-                    statusText: 'Error',
-                    errors: ['Database file not loaded'],
-                    warnings: [],
-                    confidence: '0%'
-                }];
+                // Look for UN number to start a new item
+                const unMatch = line.match(unPattern);
+                if (unMatch) {
+                    // Save previous item if exists
+                    if (currentItem) {
+                        results.push(validateAndFormatItem(currentItem));
+                    }
+                    
+                    // Start new item
+                    currentItem = {
+                        unNumber: `UN${unMatch[1]}`,
+                        psn: null,
+                        hazClass: null,
+                        packingGroup: null,
+                        line: line
+                    };
+                    
+                    // Try to extract PSN from the same line
+                    const afterUN = line.substring(line.indexOf(unMatch[0]) + unMatch[0].length).trim();
+                    if (afterUN) {
+                        // Check if there's a class number at the end
+                        const classMatch = afterUN.match(/(\d+\.?\d*)\s*$/);
+                        if (classMatch) {
+                            currentItem.hazClass = classMatch[1];
+                            currentItem.psn = afterUN.substring(0, afterUN.lastIndexOf(classMatch[1])).trim();
+                        } else {
+                            currentItem.psn = afterUN;
+                        }
+                    }
+                } else if (currentItem) {
+                    // Continue parsing current item
+                    
+                    // Check if line contains class/division
+                    const classMatch = line.match(/^(\d+\.?\d*)$/);
+                    if (classMatch && !currentItem.hazClass) {
+                        currentItem.hazClass = classMatch[1];
+                        continue;
+                    }
+                    
+                    // Check for packing group
+                    const pgMatch = line.match(/^(I{1,3}|[123])$/);
+                    if (pgMatch && !currentItem.packingGroup) {
+                        let pg = pgMatch[1];
+                        if (pg === '1') pg = 'I';
+                        if (pg === '2') pg = 'II';
+                        if (pg === '3') pg = 'III';
+                        currentItem.packingGroup = pg;
+                        continue;
+                    }
+                    
+                    // If we don't have PSN yet and this line contains text, it might be the PSN
+                    if (!currentItem.psn && line.length > 3 && /[A-Z]{3,}/.test(line)) {
+                        // Skip common headers
+                        if (!line.includes('CLASS') && !line.includes('DIVISION') && 
+                            !line.includes('PACKING') && !line.includes('GROUP') &&
+                            !line.includes('SUBSIDIARY') && !line.includes('ADDITIONAL')) {
+                            currentItem.psn = line;
+                        }
+                    }
+                }
             }
+            
+            // Don't forget the last item
+            if (currentItem) {
+                results.push(validateAndFormatItem(currentItem));
+            }
+            
+            // If no items found, fall back to single item processing
+            if (results.length === 0) {
+                console.log('No items found in table format, trying single item processing...');
+                return processSingleItem(text, structuredBlocks);
+            }
+            
+            return results;
+        }
+
+        // Process a single item (existing logic, improved)
+        function processSingleItem(text, structuredBlocks) {
+            console.log('Processing single item...');
+            
+            let unNumber = null;
+            let psn = null;
+            let hazClass = null;
+            let packingGroup = null;
+            
+            // Clean and normalize text
+            const normalizedText = text.toUpperCase();
+            const cleanText = normalizedText.replace(/\s+/g, ' ');
+            
+            // Extract UN number
+            const unPatterns = [
+                /UN\s?(\d{4})/,
+                /\bID\s?(\d{4})/,
+                /^(\d{4})$/m  // Just 4 digits on a line
+            ];
+            
+            for (const pattern of unPatterns) {
+                const match = normalizedText.match(pattern);
+                if (match) {
+                    unNumber = `UN${match[1]}`;
+                    break;
+                }
+            }
+            
+            // Process structured blocks for better accuracy
+            if (structuredBlocks.length > 0 && unNumber) {
+                // Find the block with UN number
+                const unBlockIndex = structuredBlocks.findIndex(b => 
+                    b.text.toUpperCase().includes(unNumber.replace('UN', ''))
+                );
+                
+                if (unBlockIndex !== -1) {
+                    // Look for PSN in nearby blocks
+                    for (let i = unBlockIndex + 1; i < Math.min(unBlockIndex + 10, structuredBlocks.length); i++) {
+                        const blockText = structuredBlocks[i].text.trim().toUpperCase();
+                        
+                        // Skip headers and single characters
+                        if (blockText.length < 3 || 
+                            blockText.includes('PROPER SHIPPING') ||
+                            blockText.includes('CLASS') ||
+                            blockText.includes('DIVISION') ||
+                            blockText.includes('PACKING') ||
+                            blockText.includes('UN OR ID') ||
+                            /^[0-9\s\-\.]+$/.test(blockText)) {
+                            continue;
+                        }
+                        
+                        // Check for class (single digit or digit.digit)
+                        if (!hazClass && /^[1-9](\.[0-9])?$/.test(blockText)) {
+                            hazClass = blockText;
+                            continue;
+                        }
+                        
+                        // Check for packing group
+                        if (!packingGroup && /^I{1,3}$/.test(blockText)) {
+                            packingGroup = blockText;
+                            continue;
+                        }
+                        
+                        // Otherwise, it might be the PSN
+                        if (!psn && /[A-Z]{3,}/.test(blockText)) {
+                            psn = blockText;
+                        }
+                    }
+                }
+            }
+            
+            // Fallback extraction from full text
+            if (!psn && unNumber) {
+                // Look for PSN patterns
+                const psnPatterns = [
+                    new RegExp(`${unNumber}\\s+([A-Z][A-Z\\s,\\-\\.]+?)(?=\\d|CLASS|DIVISION|$)`, 'i'),
+                    /PROPER\s+SHIPPING\s+NAME[:\s]+([A-Z][A-Z\s,\-\.]+?)(?=CLASS|DIVISION|\d|$)/i,
+                    /(?:ENGINE|MACHINERY|BATTERY|BATTERIES|LITHIUM|GASOLINE|PETROL|PAINT|AEROSOL|FLAMMABLE|ISOPROP)[A-Z\s,\-\.]*/i
+                ];
+                
+                for (const pattern of psnPatterns) {
+                    const match = normalizedText.match(pattern);
+                    if (match) {
+                        psn = match[1] ? match[1].trim() : match[0].trim();
+                        // Clean up PSN - remove extra info
+                        psn = psn.replace(/[0-9]+\s*(KG|LBS|L|ML|GAL).*$/i, '').trim();
+                        break;
+                    }
+                }
+            }
+            
+            if (!hazClass) {
+                const classMatch = cleanText.match(/(?:CLASS|DIVISION)[:\s]+(\d+\.?\d*)/);
+                if (classMatch) {
+                    hazClass = classMatch[1];
+                }
+            }
+            
+            if (!packingGroup) {
+                const pgMatch = cleanText.match(/(?:PACKING\s+GROUP|PG)[:\s]+(I{1,3}|[123])/);
+                if (pgMatch) {
+                    packingGroup = pgMatch[1];
+                    if (packingGroup === '1') packingGroup = 'I';
+                    if (packingGroup === '2') packingGroup = 'II';
+                    if (packingGroup === '3') packingGroup = 'III';
+                }
+            }
+            
+            return [validateAndFormatItem({
+                unNumber,
+                psn,
+                hazClass,
+                packingGroup
+            })];
+        }
+
+        // Validate and format a single item
+        function validateAndFormatItem(item) {
+            const { unNumber, psn, hazClass, packingGroup } = item;
+            
+            let validationStatus = '❌';
+            let statusText = 'Invalid';
+            let errors = [];
+            let warnings = [];
+            
+            if (unNumber && dgDatabase[unNumber]) {
+                const validEntries = dgDatabase[unNumber];
+                let matchFound = false;
+                let bestMatch = null;
+                
+                for (const entry of validEntries) {
+                    const psnMatch = psn && fuzzyMatch(psn, entry.psn);
+                    const classMatch = hazClass === entry.class;
+                    const pgMatch = !entry.pg || !packingGroup || packingGroup === entry.pg;
+                    
+                    if (psnMatch && classMatch && pgMatch) {
+                        matchFound = true;
+                        bestMatch = entry;
+                        validationStatus = '✅';
+                        statusText = 'Valid';
+                        break;
+                    }
+                }
+                
+                if (!matchFound) {
+                    // Provide specific errors
+                    if (!psn) {
+                        errors.push('PSN not detected');
+                    } else if (!validEntries.some(e => fuzzyMatch(psn, e.psn))) {
+                        errors.push('Invalid PSN');
+                    }
+                    
+                    if (!hazClass) {
+                        errors.push('Class not detected');
+                    } else if (!validEntries.some(e => hazClass === e.class)) {
+                        errors.push('Invalid Class');
+                    }
+                    
+                    const requiresPG = validEntries.some(e => e.pg !== null);
+                    if (requiresPG && !packingGroup) {
+                        errors.push('PG required but not detected');
+                    } else if (!requiresPG && packingGroup && packingGroup !== '-') {
+                        warnings.push('PG specified but not required');
+                    }
+                }
+            } else if (!unNumber) {
+                errors.push('UN number not detected');
+            } else {
+                errors.push('UN number not in database');
+            }
+            
+            return {
+                unNumber: unNumber || 'Not detected',
+                psn: psn || 'Not detected',
+                class: hazClass || 'Not detected',
+                packingGroup: packingGroup || '-',
+                status: validationStatus,
+                statusText: statusText,
+                errors: errors,
+                warnings: warnings,
+                confidence: unNumber ? '95%' : '0%'
+            };
+        }
+
+        // Improved fuzzy matching
+        function fuzzyMatch(str1, str2) {
+            if (!str1 || !str2) return false;
+            
+            const clean1 = str1.replace(/[^A-Z0-9]/g, '').toUpperCase();
+            const clean2 = str2.replace(/[^A-Z0-9]/g, '').toUpperCase();
+            
+            // Exact match
+            if (clean1 === clean2) return true;
+            
+            // Contains match
+            if (clean1.includes(clean2) || clean2.includes(clean1)) return true;
+            
+            // Handle common variations
+            const normalizations = [
+                ['AEROSOLSFLAMMABLE', 'AEROSOLS'],
+                ['AEROSOLSNONFLAMMABLE', 'AEROSOLS'],
+                ['ISOPROPYLALCOHOL', 'ISOPROPANOL'],
+                ['TETRAFLUOROETHANE', '1112TETRAFLUOROETHANE']
+            ];
+            
+            for (const [variant, standard] of normalizations) {
+                if ((clean1.includes(variant) && clean2.includes(standard)) ||
+                    (clean2.includes(variant) && clean1.includes(standard))) {
+                    return true;
+                }
+            }
+            
+            // Word-based matching
+            const words1 = str1.toUpperCase().split(/\s+/).filter(w => w.length > 2);
+            const words2 = str2.toUpperCase().split(/\s+/).filter(w => w.length > 2);
+            
+            const matchingWords = words2.filter(word2 => 
+                words1.some(word1 => word1.includes(word2) || word2.includes(word1))
+            );
+            
+            return matchingWords.length >= words2.length * 0.7;
         }
 
         function displayResults(results) {
             const resultsContainer = document.getElementById('results');
             const resultsBody = document.getElementById('resultsBody');
             const statusBadge = document.getElementById('statusBadge');
-            const warningsSection = document.getElementById('warningsSection');
-            const warningsList = document.getElementById('warningsList');
-            const subsidiaryInfo = document.getElementById('subsidiaryInfo');
-            const subsidiaryValue = document.getElementById('subsidiaryValue');
+            const resultsSummary = document.getElementById('resultsSummary');
             
             resultsBody.innerHTML = '';
-            warningsList.innerHTML = '';
             
-            const hasErrors = results.some(r => r.status === '❌');
-            const hasWarnings = results.some(r => r.warnings && r.warnings.length > 0);
-            const hasSubsidiary = results.some(r => r.subsidiaryHazard);
+            // Calculate summary
+            const validCount = results.filter(r => r.status === '✅').length;
+            const errorCount = results.filter(r => r.status === '❌').length;
+            const warningCount = results.filter(r => r.warnings && r.warnings.length > 0).length;
             
-            statusBadge.textContent = hasErrors ? '❌ ERRORS FOUND' : hasWarnings ? '⚠️ VALID WITH WARNINGS' : '✅ VALID';
-            statusBadge.className = hasErrors ? 'status-badge status-error' : hasWarnings ? 'status-badge status-warning' : 'status-badge status-success';
+            // Set status badge
+            if (errorCount > 0) {
+                statusBadge.textContent = `❌ ${errorCount} ERROR${errorCount > 1 ? 'S' : ''} FOUND`;
+                statusBadge.className = 'status-badge status-error';
+            } else if (warningCount > 0) {
+                statusBadge.textContent = `⚠️ VALID WITH WARNINGS`;
+                statusBadge.className = 'status-badge status-warning';
+            } else {
+                statusBadge.textContent = '✅ ALL VALID';
+                statusBadge.className = 'status-badge status-success';
+            }
             
-            results.forEach(result => {
+            // Show summary
+            resultsSummary.innerHTML = `
+                <strong>Scan Summary:</strong> ${results.length} item${results.length > 1 ? 's' : ''} detected • 
+                ${validCount} valid • ${errorCount} error${errorCount !== 1 ? 's' : ''} • 
+                ${warningCount} warning${warningCount !== 1 ? 's' : ''}
+            `;
+            
+            // Display each result
+            results.forEach((result, index) => {
                 const row = document.createElement('tr');
+                if (index > 0) {
+                    row.style.borderTop = '2px solid #555';
+                }
+                
                 row.innerHTML = `
                     <td>
                         <div>${result.unNumber}</div>
@@ -641,11 +1134,12 @@
                     </td>
                     <td class="${result.class === 'Not detected' ? 'error-text' : ''}">
                         ${result.class}
-                        ${result.errors.filter(e => e.includes('Class') || e.includes('class')).map(e => `<br><small class="error-text">${e}</small>`).join('')}
+                        ${result.errors.filter(e => e.includes('Class')).map(e => `<br><small class="error-text">${e}</small>`).join('')}
                     </td>
                     <td class="${result.errors.some(e => e.includes('PG')) ? 'error-text' : ''}">
                         ${result.packingGroup}
                         ${result.errors.filter(e => e.includes('PG')).map(e => `<br><small class="error-text">${e}</small>`).join('')}
+                        ${result.warnings.filter(w => w.includes('PG')).map(w => `<br><small class="warning-text">${w}</small>`).join('')}
                     </td>
                     <td>
                         <span class="${result.status === '✅' ? 'success-text' : 'error-text'}">
@@ -654,28 +1148,7 @@
                     </td>
                 `;
                 resultsBody.appendChild(row);
-                
-                // Display subsidiary hazard if present
-                if (result.subsidiaryHazard) {
-                    subsidiaryInfo.style.display = 'block';
-                    subsidiaryValue.textContent = `Class ${result.subsidiaryHazard}`;
-                }
-                
-                // Display warnings if any
-                if (result.warnings && result.warnings.length > 0) {
-                    result.warnings.forEach(warning => {
-                        const li = document.createElement('li');
-                        li.textContent = `• ${warning}`;
-                        warningsList.appendChild(li);
-                    });
-                }
             });
-            
-            // Show/hide subsidiary info
-            subsidiaryInfo.style.display = hasSubsidiary ? 'block' : 'none';
-            
-            // Show warnings section if there are warnings
-            warningsSection.style.display = hasWarnings ? 'block' : 'none';
             
             resultsContainer.style.display = 'block';
         }
