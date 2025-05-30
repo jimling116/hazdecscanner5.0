@@ -1,76 +1,25 @@
 const express = require('express');
 const { ImageAnnotatorClient } = require('@google-cloud/vision');
 const cors = require('cors');
-const fs = require('fs');
 const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Initialize Google Vision client (credentials handled automatically in Cloud Run)
-const visionClient = new ImageAnnotatorClient();
-
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+app.use(express.static('.')); // Serve files from root directory
 
-// Log all requests for debugging
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
+// Initialize Google Vision client (credentials handled automatically in Cloud Run)
+const visionClient = new ImageAnnotatorClient();
 
-// CRITICAL: Serve index.html explicitly for root path
+// Serve the main HTML page
 app.get('/', (req, res) => {
-  console.log('Root path requested');
-  const indexPath = path.join(__dirname, 'index.html');
-  
-  // Check if file exists
-  if (fs.existsSync(indexPath)) {
-    console.log('Serving index.html');
-    const htmlContent = fs.readFileSync(indexPath, 'utf8');
-    res.type('html').send(htmlContent);
-  } else {
-    console.error('index.html not found at:', indexPath);
-    res.status(404).send(`
-      <h1>Error: index.html not found</h1>
-      <p>Expected location: ${indexPath}</p>
-      <p>Files in directory: ${fs.readdirSync(__dirname).join(', ')}</p>
-    `);
-  }
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Serve hazmat-database.js explicitly
-app.get('/hazmat-database.js', (req, res) => {
-  const filePath = path.join(__dirname, 'hazmat-database.js');
-  if (fs.existsSync(filePath)) {
-    res.type('application/javascript').sendFile(filePath);
-  } else {
-    res.status(404).send('hazmat-database.js not found');
-  }
-});
-
-// Serve any other JavaScript files
-app.get('/*.js', (req, res) => {
-  const filePath = path.join(__dirname, req.path);
-  if (fs.existsSync(filePath) && req.path !== '/server.js') { // Don't serve server.js
-    res.type('application/javascript').sendFile(filePath);
-  } else {
-    res.status(404).send('JavaScript file not found');
-  }
-});
-
-// Serve CSS files if any
-app.get('/*.css', (req, res) => {
-  const filePath = path.join(__dirname, req.path);
-  if (fs.existsSync(filePath)) {
-    res.type('text/css').sendFile(filePath);
-  } else {
-    res.status(404).send('CSS file not found');
-  }
-});
-
-// OCR endpoint
+// Enhanced OCR endpoint
 app.post('/api/ocr', async (req, res) => {
   try {
     const { image } = req.body;
@@ -84,11 +33,16 @@ app.post('/api/ocr', async (req, res) => {
     // Convert base64 to buffer
     const imageBuffer = Buffer.from(image, 'base64');
 
-    // Use documentTextDetection for better form recognition
+    // Use DOCUMENT_TEXT_DETECTION for better structured text recognition
     const [result] = await visionClient.documentTextDetection({
       image: { content: imageBuffer },
       imageContext: {
-        languageHints: ['en']
+        // Help the OCR understand we're looking for structured text
+        languageHints: ['en'],
+        // Enable text detection for forms
+        textDetectionParams: {
+          enableTextDetectionConfidenceScore: true
+        }
       }
     });
 
@@ -97,14 +51,15 @@ app.post('/api/ocr', async (req, res) => {
     // Extract the full document text
     const fullText = result.fullTextAnnotation?.text || '';
     
-    // Log preview for debugging
-    console.log('Extracted text preview:', fullText.substring(0, 200) + '...');
+    // Log what we found for debugging
+    console.log('Extracted text length:', fullText.length);
+    console.log('First 500 chars:', fullText.substring(0, 500).replace(/\n/g, ' '));
     
     // Extract structured data with bounding boxes
     const pages = result.fullTextAnnotation?.pages || [];
     const blocks = pages[0]?.blocks || [];
     
-    // Create structured response
+    // Create a structured response with text and positional data
     const structuredText = blocks.map(block => {
       const blockText = block.paragraphs
         ?.map(p => p.words
@@ -120,12 +75,17 @@ app.post('/api/ocr', async (req, res) => {
       };
     });
 
+    // For table detection, try to identify table structure
+    const tableData = detectTableStructure(blocks);
+
     // Return comprehensive response
     res.json({
       text: fullText,
       textAnnotations: result.textAnnotations || [],
       fullTextAnnotation: result.fullTextAnnotation || null,
       structuredText: structuredText,
+      tableData: tableData,
+      // Include page-level data for spatial analysis
       pages: pages.map(page => ({
         width: page.width,
         height: page.height,
@@ -142,6 +102,55 @@ app.post('/api/ocr', async (req, res) => {
   }
 });
 
+// Helper function to detect table structure in HAZDEC forms
+function detectTableStructure(blocks) {
+  const tableRows = [];
+  
+  // Group blocks by vertical position (Y coordinate)
+  const blocksByRow = {};
+  
+  blocks.forEach(block => {
+    if (block.boundingBox && block.boundingBox.vertices) {
+      // Get average Y position
+      const avgY = block.boundingBox.vertices.reduce((sum, v) => sum + (v.y || 0), 0) / 4;
+      const rowKey = Math.round(avgY / 20) * 20; // Group into 20px rows
+      
+      if (!blocksByRow[rowKey]) {
+        blocksByRow[rowKey] = [];
+      }
+      blocksByRow[rowKey].push({
+        text: extractBlockText(block),
+        x: block.boundingBox.vertices[0].x || 0,
+        confidence: block.confidence
+      });
+    }
+  });
+  
+  // Sort blocks within each row by X position
+  Object.keys(blocksByRow).forEach(rowKey => {
+    blocksByRow[rowKey].sort((a, b) => a.x - b.x);
+    tableRows.push({
+      y: parseInt(rowKey),
+      cells: blocksByRow[rowKey].map(b => b.text)
+    });
+  });
+  
+  // Sort rows by Y position
+  tableRows.sort((a, b) => a.y - b.y);
+  
+  return tableRows;
+}
+
+// Helper to extract text from a block
+function extractBlockText(block) {
+  return block.paragraphs
+    ?.map(p => p.words
+      ?.map(w => w.symbols
+        ?.map(s => s.text || '').join('')
+      ).join(' ')
+    ).join('\n') || '';
+}
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
@@ -149,61 +158,18 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     service: 'hazdec-scanner',
     ocrMode: 'documentTextDetection',
-    version: '2.0.0'
+    features: ['multi-item', 'table-detection', 'enhanced-parsing']
   });
 });
 
-// Debug endpoint to see what files are in the container
-app.get('/debug', (req, res) => {
-  const files = fs.readdirSync(__dirname);
-  const indexExists = fs.existsSync(path.join(__dirname, 'index.html'));
-  const packageExists = fs.existsSync(path.join(__dirname, 'package.json'));
-  
-  res.json({
-    workingDirectory: __dirname,
-    files: files,
-    indexHtmlExists: indexExists,
-    packageJsonExists: packageExists,
-    nodeVersion: process.version,
-    environment: process.env.NODE_ENV || 'not set'
-  });
+// Handle 404s
+app.get('*', (req, res) => {
+  res.status(404).json({ error: 'Endpoint not found' });
 });
 
-// 404 handler - MUST be last
-app.use((req, res) => {
-  console.log(`404 - Path not found: ${req.path}`);
-  res.status(404).send(`
-    <h1>404 - Not Found</h1>
-    <p>The requested path "${req.path}" was not found on this server.</p>
-    <p><a href="/">Go to HAZDEC Scanner</a></p>
-  `);
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Server error:', err);
-  res.status(500).json({ 
-    error: 'Internal server error',
-    message: err.message 
-  });
-});
-
-// Start server
 app.listen(port, () => {
   console.log(`HAZDEC Scanner server running on port ${port}`);
-  console.log(`Working directory: ${__dirname}`);
-  
-  // List files on startup
-  const files = fs.readdirSync(__dirname);
-  console.log('Files in directory:', files);
-  
-  // Check for critical files
-  const criticalFiles = ['index.html', 'hazmat-database.js', 'package.json'];
-  criticalFiles.forEach(file => {
-    if (fs.existsSync(path.join(__dirname, file))) {
-      console.log(`✓ ${file} found`);
-    } else {
-      console.error(`✗ ${file} NOT FOUND - This will cause issues!`);
-    }
-  });
+  console.log(`Health check: http://localhost:${port}/health`);
+  console.log(`Using DOCUMENT_TEXT_DETECTION for better form recognition`);
+  console.log(`Features: Multi-item detection, Table structure analysis`);
 });
